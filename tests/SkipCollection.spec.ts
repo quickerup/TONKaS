@@ -174,7 +174,7 @@ describe('SkipCollection', () => {
         expect(result.transactions).toHaveTransaction({ from: buyer.address, to: collection.address, success: false, exitCode: 408 }); // ERR_PAUSED
     });
 
-    it('activation: 24h-skip can be activated once by its owner; Forever cannot be activated at all', async () => {
+    it('activation: 24h-skip is repeatably re-activatable by its owner (a recurring card-swipe, not a single-use voucher); Forever cannot be activated at all', async () => {
         const buyer = await blockchain.treasury('buyer');
         await collection.sendPaidMint(buyer.getSender(), { queryId: 1n, tier: TIER_24H_SKIP, value: SKIP_24H_PRICE + toNano('0.3') });
         const item = itemAt(0n);
@@ -184,11 +184,24 @@ describe('SkipCollection', () => {
         expect(badActivate.transactions).toHaveTransaction({ from: notOwner.address, to: item.address, success: false, exitCode: 401 });
 
         await item.sendActivate(buyer.getSender(), { value: toNano('0.05') });
-        const afterActivate = await item.getActivationState();
-        expect(afterActivate.activatedAt).toBeGreaterThan(0);
+        const afterFirst = await item.getActivationState();
+        expect(afterFirst.activatedAt).toBeGreaterThan(0);
 
-        const replay = await item.sendActivate(buyer.getSender(), { value: toNano('0.05') });
-        expect(replay.transactions).toHaveTransaction({ from: buyer.address, to: item.address, success: false, exitCode: 407 }); // ERR_REPLAY
+        // a second activation must succeed (not ERR_REPLAY) and actually advance activatedAt —
+        // this is the whole point of the repeatable model: the owner can refresh the window
+        // any time, indefinitely, for as long as they hold the item.
+        blockchain.now = (blockchain.now ?? Math.floor(Date.now() / 1000)) + 3600;
+        const second = await item.sendActivate(buyer.getSender(), { value: toNano('0.05') });
+        expect(second.transactions).toHaveTransaction({ from: buyer.address, to: item.address, success: true });
+        const afterSecond = await item.getActivationState();
+        expect(afterSecond.activatedAt).toBeGreaterThan(afterFirst.activatedAt);
+
+        // and a third, well after the first would have "expired" under the old model
+        blockchain.now = (blockchain.now ?? Math.floor(Date.now() / 1000)) + 3600;
+        const third = await item.sendActivate(buyer.getSender(), { value: toNano('0.05') });
+        expect(third.transactions).toHaveTransaction({ from: buyer.address, to: item.address, success: true });
+        const afterThird = await item.getActivationState();
+        expect(afterThird.activatedAt).toBeGreaterThan(afterSecond.activatedAt);
 
         // Forever
         await collection.sendPaidMint(buyer.getSender(), { queryId: 2n, tier: TIER_FOREVER, value: SKIP_FOREVER_PRICE + toNano('0.3') });

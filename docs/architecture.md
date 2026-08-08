@@ -200,6 +200,8 @@ This is the substantive design issue. NFTs do not expire, but a "24h skip" must.
 
 Model 2 is recommended. It costs one extra `uint32` in item storage and one extra message type, and it makes the tier meaningfully ownable rather than a decaying receipt.
 
+**This project uses a repeatable variant of Model 2, not the single-use version as first described above.** The 24h-skip is meant to work like a recurring daily card-swipe: the current owner can call `Activate` at any time — not just once ever — to reset `activatedAt` to `now`, indefinitely, for as long as they hold the item. There is no `assert(activatedAt == 0)` one-time guard. This was confirmed directly after the first build gated `Activate` to a single lifetime use, which was wrong: resetting early costs the holder nothing and touches no shared resource, so there's no reason to restrict frequency. The tradable-voucher property Model 2 was chosen for still holds — an item can sit unactivated (and be sold as such) indefinitely — it just isn't consumed by the first activation.
+
 The Forever item needs a separate decision: **transferable or soulbound (TEP-85)**. Transferable means the tier is an asset with a floor price and speculative demand; soulbound means the tier cannot be resold and the mint revenue is the only revenue. Transferable is the default assumption unless tier status is meant to be identity-bound.
 
 ### Mint flow and index assignment
@@ -224,7 +226,7 @@ That path has no analogue to the Vault's per-wallet elapsed-time bound (see the 
 
 The collection contract needs its own explicit on-chain rate cap on the free-mint path — the same token-bucket shape as the Vault's (`capacity` / `refillRate` / `lastRefillAt`, checked in the `ClaimReferral` handler before minting), sized to whatever a realistic legitimate referral rate looks like. This is a required structural piece of the collection contract, not just a parameter — the free-mint handler is incomplete without it.
 
-Because this vulnerability is unrelated to the Vault's claim-draining risk, the referral-attestation signer must be a **separate key** from the Vault's claim signer (see cross-cutting key inventory in `docs/tokenomics.md`) — a single compromised key should not be able to hit both attack surfaces at once.
+This vulnerability is unrelated to the Vault's claim-draining risk, which raised the question of whether the referral-attestation signer needs to be a separate key from the Vault's claim signer. The actual decision (made directly, not derived here): reuse the Vault's oracle key for referral attestations too. `signerKey` is a config value each contract holds its own copy of — `SkipCollection`'s slot is already structurally independent of the Vault's, so nothing prevents rotating to a distinct key later — and doing so is a one-line admin `SetSignerKey` call if it's ever actually warranted, not a redeploy. The free-mint rate cap above is the real, load-bearing fix for the exposure described; key separation is a cheap additional layer that turned out not to be worth the operational cost of running two keys for a risk the cap already bounds.
 
 ### Tolk sketch
 
@@ -256,7 +258,7 @@ fun onInternalMessage(in: InMessage) {
         Activate => {
             var st = lazy ItemStorage.load();
             assert (in.senderAddress == st.owner) throw ERR_NOT_OWNER;
-            assert (st.activatedAt == 0) throw ERR_REPLAY;
+            // repeatable, not single-use — see "The expiry problem" above
             st.activatedAt = blockchain.now();
             st.save();
         }

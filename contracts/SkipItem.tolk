@@ -15,12 +15,15 @@ import "constants.tolk"
 // ClaimAccount's deploy-then-configure, just with the ownership-independent piece split out
 // because THIS address specifically has to be predictable without knowing the owner.
 //
-// Activation model (24h-skip only — see docs/architecture.md "The expiry problem", Model 2):
-// item initializes with activatedAt=0 regardless of tier; a 24h-skip becomes a live window
-// only once its owner calls Activate. Forever ignores activatedAt entirely — always active,
-// no interaction required. The 24h expiry itself is enforced off-chain by the oracle
-// (activatedAt != 0 && now < activatedAt + 86400); this contract only ever records the
-// timestamp, matching the "keep it a tradable voucher" reasoning from the design doc.
+// Activation model (24h-skip only — see docs/architecture.md "The expiry problem", the
+// repeatable variant of Model 2): item initializes with activatedAt=0 regardless of tier.
+// The current owner can call Activate at ANY time — repeatedly, indefinitely, not just
+// once — to reset activatedAt to now, like a recurring daily card-swipe rather than a
+// single-use voucher. There's no one-time guard: resetting early costs the holder nothing
+// and touches no shared resource, so there's no reason to restrict frequency. Forever
+// ignores activatedAt entirely — always active, no interaction required. The 24h expiry
+// itself is enforced off-chain by the oracle (activatedAt != 0 && now < activatedAt +
+// 86400); this contract only ever records the timestamp.
 
 const MIN_ITEM_RESERVE = 10000000; // 0.01 TON kept so the item never rots out of existence
 
@@ -181,7 +184,6 @@ fun onInternalMessage(in: InMessage) {
             var st = ItemStorage.load();
             assert (in.senderAddress == st.owner) throw ERR_NOT_OWNER;
             assert (st.tier == TIER_24H_SKIP) throw ERR_WRONG_OP; // Forever has no activation concept
-            assert (st.activatedAt == 0) throw ERR_REPLAY;
             st.activatedAt = blockchain.now();
             st.save();
         }
