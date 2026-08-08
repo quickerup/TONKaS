@@ -4,6 +4,8 @@ import { Common } from '../wrappers/Common';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
 
+jest.setTimeout(30000); // Tolk cold-compiles in beforeAll; can exceed the 5s default on a loaded machine
+
 describe('Common', () => {
     let code: Cell;
 

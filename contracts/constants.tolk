@@ -116,3 +116,54 @@ struct (0x0f8a7ea5) JettonTransfer {
     forwardTonAmount: coins
     forwardPayload: RemainingBitsAndRefs
 }
+
+// --- SkipCollection ---
+
+const TIER_24H_SKIP = 0;
+const TIER_FOREVER  = 1;
+
+// Distinct from CLAIM_ATTESTATION_MAGIC even though the same oracle key signs both — the
+// referral-claim exploit and the Vault-claim exploit are different attack surfaces (see
+// docs/tokenomics.md), so a signature valid in one context must be structurally invalid in
+// the other, not just conventionally different. `collection` (not `vault`) is the domain field.
+const REFERRAL_ATTESTATION_MAGIC = 0x52464d31; // "RFM1"
+
+struct ReferralAttestation {
+    magic: uint32
+    collection: address
+    claimant: address
+    nonce: uint64
+    validUntil: uint32
+}
+
+const OP_REFERRAL_CLAIM_FWD = 0x8000530a;
+const OP_REFERRAL_APPROVED  = 0x8000530b;
+
+// SkipCollection root -> SkipItem, sent exactly once alongside the deploying stateInit. The
+// item's deploy address depends only on (collection, index) — see SkipItem.tolk's header —
+// so owner/tier/content can't be baked into that initial state; this message sets them
+// instead, same two-step shape as SlotAccount/ClaimAccount's deploy-then-configure.
+struct (0x8000530c) Init {
+    owner: address
+    tier: uint8
+    content: cell
+}
+
+// SkipCollection root -> ReferralAccount child. Same shape/reasoning as RewardVault's
+// ClaimFwd: carries the root's current signerKey so verification doesn't depend on the
+// child re-reading (potentially rotated) root state.
+struct (0x8000530a) ReferralClaimFwd {
+    queryId: uint64
+    attestation: Cell<ReferralAttestation>
+    signature: Cell<Signature>
+    signerKey: uint256
+}
+
+// ReferralAccount child -> SkipCollection root, once the child has verified
+// signature/nonce/expiry. Root still owns the free-mint bucket check and the actual mint —
+// same split as RewardVault's ClaimApproved, for the same reason (bucket is shared global
+// state; only root's serialized queue can check-and-deduct it race-free).
+struct (0x8000530b) ReferralApproved {
+    queryId: uint64
+    claimant: address
+}
