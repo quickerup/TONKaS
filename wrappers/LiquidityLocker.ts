@@ -1,29 +1,24 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from '@ton/core';
 
+// The Locker has no storage worth configuring — see contracts/LiquidityLocker.tolk. `id` only
+// exists so tests/deploys can produce distinct addresses; the real deployment can omit it.
 export type LiquidityLockerConfig = {
-    fsmState: number;
-    targetToken: Address;
-    routerA: Address;
-    vaultB: Address;
-    swap1QueryId: bigint;
-    swap2QueryId: bigint;
-    reserved: bigint;
+    id?: number;
 };
 
 export function liquidityLockerConfigToCell(config: LiquidityLockerConfig): Cell {
-    return beginCell()
-        .storeUint(config.fsmState, 8)
-        .storeAddress(config.targetToken)
-        .storeAddress(config.routerA)
-        .storeAddress(config.vaultB)
-        .storeUint(config.swap1QueryId, 64)
-        .storeUint(config.swap2QueryId, 64)
-        .storeUint(config.reserved, 64)
-        .endCell();
+    return beginCell().storeUint(config.id ?? 0, 32).endCell();
 }
 
 export class LiquidityLocker implements Contract {
-    constructor(readonly address: Address, readonly init?: { code: Cell; data: Cell }) {}
+    constructor(
+        readonly address: Address,
+        readonly init?: { code: Cell; data: Cell }
+    ) {}
+
+    static createFromAddress(address: Address) {
+        return new LiquidityLocker(address);
+    }
 
     static createFromConfig(config: LiquidityLockerConfig, code: Cell, workchain = 0) {
         const data = liquidityLockerConfigToCell(config);
@@ -37,5 +32,10 @@ export class LiquidityLocker implements Contract {
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell().endCell(),
         });
+    }
+
+    async getIsLpLocker(provider: ContractProvider): Promise<boolean> {
+        const result = await provider.get('isLpLocker', []);
+        return result.stack.readNumber() === -1;
     }
 }
