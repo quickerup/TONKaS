@@ -12,8 +12,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - run: npm ci
+      # npm ci requires the lock file to exactly match the local machine's npm-version-specific
+      # resolution, which was flaky across npm 10 (CI) vs 11 (local) for this dependency tree —
+      # npm install resolves fresh each run instead of demanding bit-exact lock conformance.
+      - run: npm install
 
       - run: npx jest --runInBand
