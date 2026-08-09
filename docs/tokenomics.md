@@ -22,13 +22,28 @@ a spec — update it as real numbers move.
   standard tooling. STON.fi's LP token behaved exactly as documented.
   **Action taken:** both DEXs' original liquidity have been withdrawn. The
   live position is STON.fi-only, TONkAS/TON pair, deposited at the pool's
-  live ratio: **32 TON + 1,089,876,600 TONkAS**.
-- **STON.fi pool address (confirmed on-chain):**
-  `EQAmkdNztx983XKtHr6DlBPgzYLdHFg-HH1tDUovQRKz0vWt`. Found via the jetton's
-  holder list — the pool's reserve is held directly at this address; its
-  recorded TEP-74 `owner` field is STON.fi's shared router (see the fake-admin
-  finding below — same address, different role here: an administrative field
-  on the pool's wallet record, not evidence of who holds the tokens).
+  live ratio: **32 TON + 1,089,876,600 TONkAS** at deposit time.
+- **STON.fi pool address (confirmed on-chain, corrected):**
+  `EQAFGrQk5fPoDK-bhjyW89Z_hnaNOAmlOGtEQW1Y1vK8GDFk`. A previous version of
+  this doc had `EQAmkdNztx983XKtHr6DlBPgzYLdHFg-HH1tDUovQRKz0vWt` here —
+  that address is real but was mislabeled: it's `token0_wallet_address`,
+  the pool's own TONkAS-side jetton wallet, not the pool contract itself.
+  Caught because it didn't survive independent verification: TonAPI reports
+  its interface as plain `jetton_wallet_v1`, and STON.fi's own asset API
+  tagged TONkAS `"no_liquidity"` despite a real deposit having happened.
+  The corrected address is triangulated three ways — present in STON.fi's
+  own `/v1/pools` listing (`token0_address` = the TONkAS jetton master,
+  `router_address` = the confirmed router below) with tag
+  `pool:dex_major_version:2`; TonAPI reports its interface as
+  `stonfi_pool_v2_const_product` with `get_pool_data`/`get_pool_type`
+  get-methods; and a direct on-chain `get_pool_data` call independently
+  returns matching `router_address`, `token0_wallet_address` (the
+  previously-mislabeled address, now correctly identified as this pool's
+  own wallet), and reserves. Live on-chain reserves as of this check:
+  **26.060000001 TON / 1,092,014,534.869648923 TONkAS** — drifted from the
+  32/1,089,876,600 deposit figures via ordinary trading (consistent with
+  the organic-buyer activity noted elsewhere in this doc), same as the
+  drift already noted for the live AMM balance above.
 - Of the ~58.47B tokens that didn't fit into the single-pool deposit ratio,
   **~57,468,162,303.42 tokens (~57.47B) were burned** — sent to the TON
   zero/null address, confirmed on-chain. This was a deliberate operational
@@ -290,13 +305,28 @@ an unverifiable pool. What's actually happened, in order:
 - **Single venue: STON.fi only.** The DeDust leg is dropped, not deferred —
   see "Current mainnet state" above for why. No `DexConfig`-per-venue, no
   50/50 split, no second deposit leg anywhere in the design.
-- **STON.fi pool (confirmed on-chain):**
-  `EQAmkdNztx983XKtHr6DlBPgzYLdHFg-HH1tDUovQRKz0vWt` — TONkAS/TON pair,
-  found via the jetton's holder list (the pool holds its reserve directly at
-  this address). This was the last blocker; Router is now unblocked to build
-  for real.
-- Live pool position: 32 TON + 1,089,876,600 TONkAS, deposited at the pool's
-  live ratio.
+- **STON.fi pool (confirmed on-chain, corrected — see "Current mainnet
+  state" above for how the earlier address was caught and fixed):**
+  `EQAFGrQk5fPoDK-bhjyW89Z_hnaNOAmlOGtEQW1Y1vK8GDFk` — TONkAS/TON pair,
+  interface `stonfi_pool_v2_const_product`, `dex_major_version:2`. This was
+  the last blocker; Router is now unblocked to build for real.
+- **Full verified address set for Router, v2.2 ConstantProduct:**
+  - STON.fi router: `EQADEFMTMnC-gu5v2U0ZY8AYaGhAOk9TcECg1TOquAW3r-IE` (v2.2,
+    `pool_creation_enabled: true` — same address already known as the
+    fake-admin placeholder; two unrelated roles, one legitimate as a DEX
+    contract we integrate with, one mistaken as our own `admin`)
+  - pTON v2.1 master: `EQBnGWMCf3-FZZq1W4IWcWiGAc3PHuZ0_H-7sad2oY00o83S`
+  - This router's own pTON wallet:
+    `EQACuz151snlY46PKdUOkyiCf0zzcxMsN6XmKQkSKZjkvyFH` — also, confirmed by
+    direct on-chain `get_pool_data`, the pool's own `token1_wallet_address`
+    (the TON side of the pool's reserve)
+  - Pool's TONkAS-side wallet (`token0_wallet_address`):
+    `EQAmkdNztx983XKtHr6DlBPgzYLdHFg-HH1tDUovQRKz0vWt` — the address from
+    the earlier mislabeling, now correctly identified as this
+- Live pool position at deposit time: 32 TON + 1,089,876,600 TONkAS. Live
+  on-chain reserves as of the latest check: 26.060000001 TON /
+  1,092,014,534.869648923 TONkAS — drifted via ordinary trading since
+  deposit.
 - **LP-token policy, settled:** every cycle's resulting LP token routes to
   the Locker, never burned. No fee-claim function exists or is planned —
   decided against in favor of simplicity and zero future admin-trust
@@ -338,8 +368,9 @@ numbers rather than eyeballed, which changed two of the three conclusions:
 ## Still blocking
 
 - ~~STON.fi pool's raw contract address~~ — **resolved**:
-  `EQAmkdNztx983XKtHr6DlBPgzYLdHFg-HH1tDUovQRKz0vWt`. Router is unblocked to
-  build for real, against the single-venue design.
+  `EQAFGrQk5fPoDK-bhjyW89Z_hnaNOAmlOGtEQW1Y1vK8GDFk` (corrected from an
+  earlier mislabeled address — see "Current mainnet state" above). Router
+  is unblocked to build for real, against the single-venue design.
 - A real multisig, deployed and repointed as `admin` across every contract —
   needed before *mainnet deployment* of anything, not before building or
   testing Router (which can use the same placeholder-admin pattern already
