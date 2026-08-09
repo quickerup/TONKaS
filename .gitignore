@@ -6,6 +6,7 @@ dist
 package.ts
 .env
 .claude/
+bot/.sessions/
 
 # VS Code
 .vscode/*
