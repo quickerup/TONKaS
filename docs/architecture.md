@@ -284,6 +284,8 @@ Expose `activatedAt` through an additional non-standard getter (`activationState
 
 Every TON that enters the system — slot purchases and NFT mints alike — lands here. The Router converts that TON into permanently locked liquidity: swap a portion for the reward token, pair the remainder back with it, deposit into the STON.fi pool, and route the resulting LP tokens to the Locker. The economic claim is that no purchase can ever be extracted; it can only deepen the floor.
 
+**LP-token policy — settled, not an open question.** Every cycle's resulting LP token routes to the Locker. Never burned. There is no fee-claim function anywhere in the Router or Locker, and none is planned — an admin-callable "withdraw accrued trading fees" function is exactly the kind of narrow, easy-to-justify admin surface that quietly reintroduces trust into a system whose entire pitch is that no one can extract value. Simplicity and a zero-admin-trust surface on this specific path outweigh whatever yield a fee-claim mechanism would otherwise recover. Trading fees the pool position accrues stay inside the LP position and compound it — this is a real strengthening of the locked-liquidity claim, not just an implementation detail, since it means locked value grows over time from principal *and* accumulated fees, not principal alone.
+
 This is the most complex contract in the system, and the complexity is not in the arithmetic. It is that a "buyback" is several sequential cross-contract calls against a third-party DEX, none of which can be rolled back, executed by a contract that cannot read the pool's price synchronously.
 
 ### Batch, do not stream

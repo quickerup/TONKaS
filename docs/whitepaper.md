@@ -200,7 +200,7 @@ The Buyback-and-Lock Router is the purchase-settlement path for paid slots and N
 
 The protocol's liquidity strategy is single-venue by design, not as an interim state pending a second integration. An earlier design routed liquidity across two DEXes; that was superseded after one candidate venue's pool architecture proved unverifiable through standard on-chain tooling in ways the protocol should not have to depend on. TONkAS liquidity lives on STON.fi.
 
-Execution amounts will necessarily reflect DEX fees, price impact, reserve ratios, minimum-output checks, and integer rounding. Those operational effects do not change the custody destination: LP tokens produced by successful routing are sent to the non-withdrawable Locker.
+Execution amounts will necessarily reflect DEX fees, price impact, reserve ratios, minimum-output checks, and integer rounding. Those operational effects do not change the custody destination: LP tokens produced by successful routing are sent to the non-withdrawable Locker, and are never burned. Neither the Router nor the Locker has, or is planned to have, a function that claims trading fees accrued by a locked LP position — that surface was deliberately left out in favor of simplicity and a smaller admin-trust footprint. Accrued fees stay inside the position and compound it.
 
 The Router is being built last so that its integration targets the actual DEX interface and pool behavior rather than an early scaffold. It is not complete as of this draft. Until its source, tests, configured pool, and deployed address are published, no reader should treat the purchase-routing mechanism as live.
 
@@ -263,6 +263,7 @@ The following properties are intended to be directly verifiable in deployed code
 
 - assets held by the LP Locker have no contract-mediated exit;
 - the Locker cannot be upgraded to add an exit;
+- no function exists, in the Router or the Locker, to claim trading fees accrued by a locked LP position — accrued fees remain inside the position and compound it, so locked value grows from principal and trading activity together, not principal alone;
 - approximately 57.47 billion TONkAS tokens have been sent to the TON network's zero address and are unspendable by any party, verifiable directly against the jetton's on-chain holder records;
 - the Registry gives each wallet one implicit slot and caps total slots at 100;
 - paid-slot prices follow the geometric formula enforced by the Registry;

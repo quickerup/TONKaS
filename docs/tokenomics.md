@@ -29,26 +29,68 @@ a spec — update it as real numbers move.
   recorded TEP-74 `owner` field is STON.fi's shared router (see the fake-admin
   finding below — same address, different role here: an administrative field
   on the pool's wallet record, not evidence of who holds the tokens).
-- Of the ~58.47B tokens that didn't fit into the single-pool deposit ratio:
-  - **~57,468,162,303.42 tokens (~57.47B) were burned** — sent to the TON
-    zero/null address, confirmed on-chain. This was a deliberate operational
-    call: burning achieves permanent removal from circulating supply without
-    spending mainnet gas deploying and routing through the LP Locker contract
-    for a plain (non-LP) balance that has no reason to ever move again. This
-    is documented as a **second anti-rug pillar** alongside the locked LP
-    position — see "Anti-rug guarantees" below.
-  - **~1B tokens were kept as a founder reserve**, intended for operational
-    uses (e.g. paying a future dev team), not burned and not part of any
-    anti-rug claim.
-- A further **10B tokens held directly** (not in a pool) in dev wallet
-  `UQDZlnNRydIutcTUJFgm6Mggnu79-JIzpr1uoMg9qqW7OE4J` (confirmed active), of
-  which **9B is earmarked for the game's Reward Vault**, transferred in at
-  launch. Unrelated to the burn/founder-reserve split above — this is a
-  separate, earlier-documented holding.
+- Of the ~58.47B tokens that didn't fit into the single-pool deposit ratio,
+  **~57,468,162,303.42 tokens (~57.47B) were burned** — sent to the TON
+  zero/null address, confirmed on-chain. This was a deliberate operational
+  call: burning achieves permanent removal from circulating supply without
+  spending mainnet gas deploying and routing through the LP Locker contract
+  for a plain (non-LP) balance that has no reason to ever move again. This
+  is documented as a **second anti-rug pillar** alongside the locked LP
+  position — see "Anti-rug guarantees" below.
+- **Developer / Founder Reserve wallet:**
+  `UQDZlnNRydIutcTUJFgm6Mggnu79-JIzpr1uoMg9qqW7OE4J` (confirmed active),
+  originally holding **10,000,000,000.000002137 tokens**, of which
+  **9,000,000,000 is earmarked for the game's Reward Vault** (transferred in
+  at launch) and the remaining **~1,000,000,000.000002 was the founder's
+  discretionary reserve** (the ~1B figure referenced elsewhere in this doc),
+  intended for operational uses such as paying a future dev team.
+  Correction from an earlier draft of this doc: a different wallet
+  (a small early organic buyer, folded into the bullet below) was briefly
+  mislabeled as "the founder reserve" based on a coincidental balance match;
+  this wallet — the same one earmarked for the Vault — is the correct one.
+  **Update, verified on-chain:** the founder has since deposited part of the
+  discretionary reserve into the STON.fi pool and burned the resulting LP
+  tokens too. Exact on-chain deltas (re-queried via the same holders
+  endpoint): the wallet's balance dropped from 10,000,000,000.000002137 to
+  **9,976,533,839.619988291** (−23,466,160.380013846 tokens), and the STON.fi
+  pool's balance rose by the identical amount — confirming the deposit came
+  from this wallet. Net effect: the 9B Vault earmark is untouched, and the
+  discretionary founder reserve now stands at **~976,533,839.62 tokens
+  (~976.53M / ~0.977B)**, down from the original ~1B. This further increases
+  locked liquidity depth beyond the initial single-pool deposit and reduces
+  the outstanding discretionary reserve below its original figure — the same
+  "second anti-rug pillar" logic as the burn, applied incrementally as the
+  founder chooses to deploy more of the discretionary reserve this way.
 - A handful of buys have already happened directly against the pool, outside
-  the game — expected and fine, the game isn't the only entry point. Two
-  such organic-buyer wallets are visible in the jetton's holder list; noted
-  as operational oddities, nothing to act on.
+  the game — expected and fine, the game isn't the only entry point. **Three**
+  such organic-buyer wallets are visible in the jetton's holder list (one —
+  holding ~1B tokens — is the wallet briefly mislabeled as "founder reserve"
+  above; confirmed by the founder to be an unrelated early buyer, not a
+  developer-controlled wallet); noted as operational oddities, nothing to
+  act on.
+
+### Token distribution (verified on-chain snapshot)
+
+Reconstructed directly from the jetton's current holder list rather than
+from separately-tracked figures, so it's guaranteed to sum to the verified
+total supply exactly. The pool row is a live AMM balance and will drift with
+ordinary trading — everything else here is either fixed or moves only via a
+deliberate, documented action.
+
+| Category | Tokens | Share |
+|---|---|---|
+| Burned (zero address) | 57,468,162,303.42 | 82.45% |
+| Reward Vault allocation | 9,000,000,000.00 | 12.91% |
+| STON.fi pool (TONkAS side, live) | 1,098,521,979.00 | 1.58% |
+| Organic buyers (3 wallets) | 1,153,751,573.97 | 1.66% |
+| **Founder reserve (discretionary)** | **976,533,839.62** | **1.40%** |
+| **Total** | **69,696,969,696** | **100%** |
+
+The Vault allocation and the founder reserve are both currently held in the
+same wallet (`UQDZlnNRydIutcTUJFgm6Mggnu79-JIzpr1uoMg9qqW7OE4J`) pending the
+Vault transfer at launch; they're split into separate rows here because
+they're committed to different purposes, not because they sit in different
+places today.
 - **The configured `admin` address is not a real multisig — it never was.**
   `EQADEFMTMnC-gu5v2U0ZY8AYaGhAOk9TcECg1TOquAW3r-IE`, used as `admin` across
   Registry, Vault, and SkipCollection throughout this build, is **STON.fi's
@@ -124,12 +166,18 @@ an unverifiable pool. What's actually happened, in order:
 3. **Done:** re-deposited as a single STON.fi-only position (32 TON +
    1,089,876,600 TONkAS) at the pool's live ratio.
 4. **Done:** the ~58.47B tokens that didn't fit the new ratio were split —
-   ~57.47B burned, ~1B kept as a founder reserve (see above).
-5. **Not yet done:** Router itself — once built, its buyback cycles will
+   ~57.47B burned, ~1B kept as the founder's discretionary reserve (see
+   above).
+5. **Done, ongoing:** the founder has since deposited part of the
+   discretionary reserve into the STON.fi pool and burned the resulting LP
+   tokens too, further deepening locked liquidity and reducing the
+   discretionary reserve below its original ~1B figure (see above for exact,
+   verified numbers). This is incremental and may recur.
+6. **Not yet done:** Router itself — once built, its buyback cycles will
    route to the confirmed STON.fi pool, and resulting LP tokens will route
    to the LP Locker per the original design (that part of the design is
    unchanged).
-6. **Not yet done, designated as the first mainnet action once Router is
+7. **Not yet done, designated as the first mainnet action once Router is
    ready:** deploy a real multisig and repoint every contract's `admin`
    field at it, replacing the STON.fi-shared-router placeholder — see the
    fake-admin finding above.
@@ -249,6 +297,10 @@ an unverifiable pool. What's actually happened, in order:
   for real.
 - Live pool position: 32 TON + 1,089,876,600 TONkAS, deposited at the pool's
   live ratio.
+- **LP-token policy, settled:** every cycle's resulting LP token routes to
+  the Locker, never burned. No fee-claim function exists or is planned —
+  decided against in favor of simplicity and zero future admin-trust
+  surface on this path. See `docs/architecture.md`'s Router section.
 - Cycle threshold: whichever hits first — 10 TON accumulated, or 6 hours elapsed
 - Cranker bounty: 1.5% of the batched amount, permissionless
 - Quote-signer key: not yet built — placeholder pubkey + rotation, separate
