@@ -232,7 +232,22 @@ Purchase TON is not intended as protocol revenue. After the Router is deployed a
 
 The Reward Vault allocation is exactly 9,000,000,000 tokens. No further tokens can be minted for mining. The allocation is released only through valid claims within the Vault's emission constraints.
 
-This paper does not specify allocations outside the mining Vault, initial DEX seeding quantities, pool ratios, or any other launch distribution not provided in the final token deployment record. Those values must be published before launch and reconciled against the deployed jetton supply. The absence of those values here is deliberate; a whitepaper should not turn an undecided number into a fact by typesetting it.
+Outside the 9,000,000,000-token mining allocation, approximately 976,530,000 tokens are held by the project's founder as a discretionary reserve. This reserve is not locked, not vested, and not subject to any on-chain restriction — it is an ordinary wallet balance the founder may use, hold, or sell at their own discretion. The stated intent is to fund development and operational costs as the project matures, potentially including selling a portion as token price rises. That intent is not enforced by any contract; it is a statement of purpose, not a guarantee, and should be read as such.
+
+A portion of this reserve has already been voluntarily redeployed as additional locked liquidity — added to the STON.fi pool and its resulting LP token sent to the Locker, the same non-withdrawable contract described in Section 5.1 — reducing the reserve from its original approximately 1,000,000,000 tokens. This was a discretionary choice, not a required or scheduled one, and no future redeployment on this or any schedule is promised.
+
+This is the one material token allocation in this document not backed by a verifiable code-level property. Every other claim in this paper — the Locker's absence of an exit, the Vault's hard-capped emission, the tokens sent to the null address and permanently unspendable by anyone — is a property of deployed contracts. The founder reserve is not; it is ordinary discretionary ownership, disclosed plainly rather than described in language that might suggest otherwise.
+
+**Table 3: Token allocation, on-chain snapshot.** Figures below are pulled from the live holder-data reconstruction in `docs/tokenomics.md`, not tracked independently — reconcile against that source, and against the deployed jetton supply directly, before treating any figure here as current.
+
+| Category | Tokens | Share |
+|---|---|---|
+| Burned (zero address, permanent) | 57,468,162,303.42 | 82.45% |
+| Reward Vault allocation | 9,000,000,000.00 | 12.91% |
+| STON.fi pool (TONkAS side, live AMM balance) | 1,098,521,979.00 | 1.58% |
+| Organic buyer holdings (3 wallets, outside the game) | 1,153,751,573.97 | 1.66% |
+| Founder reserve, discretionary | ~976.53M | 1.40% |
+| **Total** | **69,696,969,696** | **100%** |
 
 ### 7.2 Emission Schedule
 
