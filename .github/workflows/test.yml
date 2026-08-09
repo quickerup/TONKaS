@@ -20,3 +20,9 @@ jobs:
       - run: npm install
 
       - run: npx jest --runInBand
+
+      # Catches shared-file drift (constants.tolk, common.tolk, stdlib) silently shifting a
+      # contract's compiled bytecode -- and therefore its deploy address -- the moment it
+      # happens, not whenever someone next happens to recompute an address by hand. See
+      # pinned-hashes.json's header for the incident that motivated this.
+      - run: npx tsx scripts/checkPinnedHashes.ts
