@@ -3,6 +3,10 @@ import { SkipCollection, offchainContent } from '../wrappers/SkipCollection';
 import { compile, NetworkProvider } from '@ton/blueprint';
 
 // Resolved parameters — see docs/tokenomics.md "Skip NFT Collections".
+// PLACEHOLDER — this is STON.fi's shared router, not a real multisig. Fine for
+// testnet/dev; must be replaced before any mainnet deploy. See docs/tokenomics.md
+// "Current mainnet state" — deploying the real multisig is the designated first
+// mainnet action.
 const ADMIN = Address.parse('EQADEFMTMnC-gu5v2U0ZY8AYaGhAOk9TcECg1TOquAW3r-IE');
 
 // Router isn't deployed yet — same placeholder pattern as Registry/Vault.

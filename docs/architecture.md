@@ -1,6 +1,8 @@
 # System Architecture — Four Contracts in Tolk
 
-Expanded descriptions, state layouts, message flows, and failure modes. Tolk syntax follows the current TON docs (`contract` declaration, opcoded structs, `lazy` parsing, `createMessage`); DEX interface details should be re-checked against STON.fi and DeDust's live docs before implementation, since those are the fastest-moving dependency in the system.
+Expanded descriptions, state layouts, message flows, and failure modes. Tolk syntax follows the current TON docs (`contract` declaration, opcoded structs, `lazy` parsing, `createMessage`); DEX interface details should be re-checked against STON.fi's live docs before implementation, since it's the fastest-moving dependency in the system.
+
+**Single-venue, not dual.** The Router section below targets STON.fi only. The original design routed liquidity 50/50 across STON.fi and DeDust; that's dropped, not deferred — DeDust v2's pool architecture doesn't expose standard jetton get-methods (`get_wallet_address` fails with exit code 11), doesn't surface in generic jetton-holder indexes, and its `get_pool_data` returns internal vault-routing structures that don't match documented DeDust jetton-LP behavior. It's a real, active pool, just not one verifiable or reasoned about through standard tooling. Both DEXs' original liquidity have been withdrawn on mainnet; the live position is STON.fi-only, and this isn't "STON.fi first, DeDust later" — it's single venue, full stop, for the foreseeable future.
 
 ---
 
@@ -280,15 +282,15 @@ Expose `activatedAt` through an additional non-standard getter (`activationState
 
 ### What it is
 
-Every TON that enters the system — slot purchases and NFT mints alike — lands here. The Router converts that TON into permanently locked liquidity: swap a portion for the reward token, pair the remainder back with it, deposit into both DEX pools, and route the resulting LP tokens to the Locker. The economic claim is that no purchase can ever be extracted; it can only deepen the floor.
+Every TON that enters the system — slot purchases and NFT mints alike — lands here. The Router converts that TON into permanently locked liquidity: swap a portion for the reward token, pair the remainder back with it, deposit into the STON.fi pool, and route the resulting LP tokens to the Locker. The economic claim is that no purchase can ever be extracted; it can only deepen the floor.
 
-This is the most complex contract in the system, and the complexity is not in the arithmetic. It is that a "buyback" is five to nine sequential cross-contract calls across two third-party DEXes, none of which can be rolled back, executed by a contract that cannot read any of their prices synchronously.
+This is the most complex contract in the system, and the complexity is not in the arithmetic. It is that a "buyback" is several sequential cross-contract calls against a third-party DEX, none of which can be rolled back, executed by a contract that cannot read the pool's price synchronously.
 
 ### Batch, do not stream
 
 The described design executes a buyback on every incoming purchase. This should change. Per-purchase execution means:
 
-- Every small purchase pays the full multi-leg gas cost of a swap and two LP deposits
+- Every small purchase pays the full multi-leg gas cost of a swap and an LP deposit
 - Small swaps eat proportionally larger price impact and fixed DEX fees
 - Every purchase mints a dust LP position, and dust rounding is lost on each one
 - The Router is mid-cycle almost continuously, so a stuck leg blocks everything behind it
@@ -312,25 +314,22 @@ Signed quote with a short deadline is the practical starting point, with the sig
 
 ### DEX integration notes
 
-The two integrations are structurally different and both must live in configurable storage, never hardcoded constants.
+STON.fi's config lives in storage, not hardcoded constants, so a pool migration is a parameter change rather than a redeploy.
 
-- **STON.fi** — TON-side swaps go through the pTON proxy wallet; the swap itself is a jetton transfer to the router with a forward payload carrying swap parameters. The Router therefore needs the pTON wallet address, the router address, and its own jetton wallet for the reward token.
-- **DeDust** — assets are typed (native vs jetton), TON enters through the native vault, and pools are addressable contracts. Different message shapes, different address set.
-
-Store both as a `DexConfig` struct per venue so a router upgrade or pool migration is a parameter change rather than a redeploy.
+- TON-side swaps go through the pTON proxy wallet; the swap itself is a jetton transfer to the STON.fi router with a forward payload carrying swap parameters.
+- The Router needs: the pTON wallet address, STON.fi's router address, the specific TONkAS/TON pool address, and its own jetton wallet for the reward token.
 
 ### LP token routing
 
-The naive path is: DEX mints LP to the Router → Router transfers LP to the Locker. That is an extra hop, an extra gas payment, and an extra failure state in which LP sits unlocked in the Router. If either DEX allows specifying the LP recipient at deposit time, set it to the Locker directly and the LP never touches the Router. Where the recipient cannot be specified, the Router must handle the incoming LP `transfer_notification` and forward — which means a handler that can distinguish LP arrivals from reward-token arrivals by sender jetton wallet address.
+The naive path is: STON.fi mints LP to the Router → Router transfers LP to the Locker. That is an extra hop, an extra gas payment, and an extra failure state in which LP sits unlocked in the Router. If STON.fi allows specifying the LP recipient at deposit time, set it to the Locker directly and the LP never touches the Router. If the recipient cannot be specified, the Router must handle the incoming LP `transfer_notification` and forward — which means a handler that can distinguish LP arrivals from reward-token arrivals by sender jetton wallet address.
 
 ### Cycle state machine
 
 ```
 Idle
- └─ ExecuteCycle ──▶ SwapPending      (queryId, deadline, expected legs)
-       └─ token received ──▶ DepositA  (STON.fi add-liquidity)
-             └─ ack/LP ──▶ DepositB    (DeDust add-liquidity)
-                   └─ ack/LP ──▶ Idle  (emit TOPIC_CYCLE_DONE)
+ └─ ExecuteCycle ──▶ SwapPending   (queryId, deadline)
+       └─ token received ──▶ Depositing  (STON.fi add-liquidity)
+             └─ ack/LP ──▶ Idle  (emit TOPIC_CYCLE_DONE)
 ```
 
 Every transition carries the `queryId`; messages with a stale `queryId` are dropped rather than processed. Every leg has a bounce handler that returns the cycle to `Idle` and leaves funds accumulated for the next attempt. A `stuckAfter` timestamp lets anyone reset a cycle that has been non-`Idle` past the deadline — without it, one failed DEX call freezes the value sink permanently.
@@ -343,13 +342,14 @@ struct RouterStorage {
     locker: address
     quoteSigner: uint256
     rewardJettonWallet: address
-    stonfi: DexConfig
-    dedust: DexConfig
+    stonfiRouter: address
+    stonfiPool: address
+    pTonWallet: address
     accumulated: coins
     minCycleValue: coins
     minCycleInterval: uint32
     cranBounty: coins
-    state: uint8            // 0=Idle, 1=Swap, 2=DepositA, 3=DepositB
+    state: uint8            // 0=Idle, 1=Swap, 2=Depositing
     activeQueryId: uint64
     stuckAfter: uint32
     lastCycleAt: uint32
@@ -480,7 +480,7 @@ struct VaultStorage {
 1. **Registry** first — it exercises the sharded-child pattern, deterministic addressing, and Router forwarding with nothing else depending on it. Get this right and the Vault's `ClaimAccount` is a copy.
 2. **Vault** second — self-contained, signature-heavy, testable entirely in sandbox with a mock jetton. The security properties here are the ones with the largest downside.
 3. **NFT collections** third — mostly standard-conformance work; the only novel piece is activation.
-4. **Router** last, and against real DEX code. Sandbox mocks will not surface the integration bugs; deploy the actual STON.fi and DeDust contract code cells into the test environment, or run the integration phase on testnet against live deployments.
+4. **Router** last, and against real DEX code. Sandbox mocks will not surface the integration bugs; deploy the actual STON.fi contract code cells into the test environment, or run the integration phase on testnet against live deployments.
 
 Tolk-specific tooling notes: the `contract` declaration drives ABI export and TypeScript wrapper generation, so the Blueprint test suite gets typed message constructors for free — use them rather than hand-rolling cell builders in tests, since hand-rolled builders test your test code rather than the contract. Use `lazy` on every storage load and message parse; on contracts with wide storage structs like the Router, the skipped-field optimization is a meaningful share of the gas. Keep opcodes in one shared constants file with a namespacing scheme, because a collision between two contracts' opcodes is silent at compile time and catastrophic at runtime.
 

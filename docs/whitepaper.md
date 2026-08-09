@@ -98,7 +98,7 @@ The protocol separates custody, slot ownership, reward distribution, convenience
 | Slot Registry | One implicit free slot per wallet; paid slot ownership and pricing | Built and tested |
 | Reward Vault | Custody and bounded distribution of the 9 billion token reward allocation | Built and tested |
 | Skip NFT Collections | 24-hour and permanent interaction-skip rights | In development |
-| Buyback-and-Lock Router | Converts purchase proceeds into DEX liquidity and sends LP tokens to the Locker | In development |
+| Buyback-and-Lock Router | Converts purchase proceeds into STON.fi liquidity and sends LP tokens to the Locker | In development |
 | Telegram bot and oracle | Player interface, hourly participation accounting, and signed claim attestations | Integration in progress |
 
 Mainnet identifiers will be listed in the final deployment record:
@@ -193,14 +193,16 @@ Both Skip NFT Collections are in development. Their final collection addresses a
 
 The Buyback-and-Lock Router is the purchase-settlement path for paid slots and NFTs. For TON received through those purchases, the Router is designed to:
 
-1. swap one half of the received TON for the TONkAS reward token through the supported DEX pools;
+1. swap one half of the received TON for the TONkAS reward token through the token's STON.fi pool;
 2. pair the acquired tokens with the remaining TON;
-3. provide the resulting liquidity, allocated 50/50 across the two pools on which the token trades; and
+3. provide the resulting liquidity to that same STON.fi pool; and
 4. send all resulting LP tokens directly to the LP Locker.
+
+The protocol's liquidity strategy is single-venue by design, not as an interim state pending a second integration. An earlier design routed liquidity across two DEXes; that was superseded after one candidate venue's pool architecture proved unverifiable through standard on-chain tooling in ways the protocol should not have to depend on. TONkAS liquidity lives on STON.fi.
 
 Execution amounts will necessarily reflect DEX fees, price impact, reserve ratios, minimum-output checks, and integer rounding. Those operational effects do not change the custody destination: LP tokens produced by successful routing are sent to the non-withdrawable Locker.
 
-The Router is being built last so that its integration targets the actual DEX interfaces and pool behavior rather than an early scaffold. It is not complete as of this draft. Until its source, tests, configured pools, and deployed address are published, no reader should treat the purchase-routing mechanism as live.
+The Router is being built last so that its integration targets the actual DEX interface and pool behavior rather than an early scaffold. It is not complete as of this draft. Until its source, tests, configured pool, and deployed address are published, no reader should treat the purchase-routing mechanism as live.
 
 ## 6. The Mining Loop
 
@@ -222,7 +224,7 @@ The applicable network reward budget is divided evenly among all active slots. A
 
 A paid slot buys one additional unit of equally weighted mining capacity, subject to the 100-slot wallet cap. A skip NFT buys reduced interaction frequency. Neither product promises a fixed token return, a fiat-denominated return, or a profit. Per-slot rewards vary with the emission epoch, the participation multiplier, and the number of active slots in the hour.
 
-Purchase TON is not intended as protocol revenue. After the Router is deployed and activated, it is routed into liquidity whose LP tokens are locked permanently. This makes game participation part of the protocol's liquidity formation. It does not guarantee price appreciation or sufficient trading volume.
+Purchase TON is not intended as protocol revenue. After the Router is deployed and activated, it is routed into the token's STON.fi liquidity, whose LP tokens are locked permanently. This makes game participation part of the protocol's liquidity formation. It does not guarantee price appreciation or sufficient trading volume.
 
 ## 7. Tokenomics
 
@@ -249,7 +251,7 @@ The schedule slows distribution as cumulative mining advances. Because the trigg
 
 Once the Router is deployed, paid interactions create the following economic path:
 
-> **slot or NFT purchase → token purchase and liquidity provision → LP Locker**  — (Eq. 6)
+> **slot or NFT purchase → token purchase and STON.fi liquidity provision → LP Locker**  — (Eq. 6)
 
 There is no later step from the LP Locker back to the team. That missing arrow is the core tokenomic constraint.
 
@@ -261,6 +263,7 @@ The following properties are intended to be directly verifiable in deployed code
 
 - assets held by the LP Locker have no contract-mediated exit;
 - the Locker cannot be upgraded to add an exit;
+- approximately 57.47 billion TONkAS tokens have been sent to the TON network's zero address and are unspendable by any party, verifiable directly against the jetton's on-chain holder records;
 - the Registry gives each wallet one implicit slot and caps total slots at 100;
 - paid-slot prices follow the geometric formula enforced by the Registry;
 - the Reward Vault cannot mint additional reward tokens;
@@ -270,6 +273,8 @@ The following properties are intended to be directly verifiable in deployed code
 - replayed or already-paid claims are rejected.
 
 These statements must be checked against the mainnet bytecode and configuration at launch. Source code alone is not proof that a particular deployed address contains that code.
+
+The burn figure above is not a target or a future commitment; it is a completed transaction, checkable today against the deployed jetton's holder list independent of anything this paper claims. It functions as a second, distinct anti-rug guarantee alongside locked LP: locked LP removes the trading pool itself as a source of extractable value, while the burn permanently removes the largest plausible source of founder sell-pressure from the circulating supply. Tokens sent to the zero address are not held by any contract and cannot be recovered by any future code path, upgrade, or exploit, because there is no contract in the recovery loop at all.
 
 ### 8.2 Remaining Trust and Risk
 
