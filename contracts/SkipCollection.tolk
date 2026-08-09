@@ -62,12 +62,6 @@ struct (0x80005308) RetryForward {
     queryId: uint64
 }
 
-// Root -> Router. Tiny/tagged (rather than a bare empty-body transfer) purely so
-// onBouncedMessage can unambiguously identify a bounced forward vs. a bounced ReferralClaimFwd.
-struct (0x80005309) RouterForward {
-    queryId: uint64
-}
-
 struct (0x8000530d) SetContent {
     collectionContent: cell
     content24h: cell

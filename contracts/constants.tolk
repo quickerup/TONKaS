@@ -167,3 +167,26 @@ struct (0x8000530b) ReferralApproved {
     queryId: uint64
     claimant: address
 }
+
+// Root -> Router. Tiny/tagged (rather than a bare empty-body transfer) purely so
+// onBouncedMessage can unambiguously identify a bounced forward vs. other bounceable sends
+// at the same call site. Moved here (was local to SkipCollection.tolk) because Router needs
+// to accept it too — this file's whole purpose is to be the one place a cross-contract
+// opcode collision can't hide. SlotAccount forwards proceeds as a bare empty-body transfer
+// instead (it has no other bounceable send to disambiguate against); Router accepts both
+// shapes as a deposit.
+struct (0x80005309) RouterForward {
+    queryId: uint64
+}
+
+// --- Router ---
+//
+// Standard TEP-74 notification, sent by a jetton wallet to its owner when it receives a
+// transfer. Router listens for this from its own registered TONkAS wallet to detect a
+// STON.fi swap landing — see Router.tolk's cycle state machine.
+struct (0x7362d09c) JettonNotify {
+    queryId: uint64
+    amount: coins
+    sender: address
+    forwardPayload: RemainingBitsAndRefs
+}

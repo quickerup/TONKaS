@@ -341,22 +341,44 @@ Dust from imperfect deposit ratios comes back as excess and should simply be lef
 ```tolk
 struct RouterStorage {
     admin: address
-    locker: address
-    quoteSigner: uint256
-    rewardJettonWallet: address
-    stonfiRouter: address
-    stonfiPool: address
-    pTonWallet: address
+    locker: address              // immutable, no setter — see "Built" note below
+    stonfiRouter: address        // immutable, no setter
+    stonfiTonkasWallet: address  // immutable, no setter — STON.fi's own wallet for TONkAS,
+                                   // used both as the swap's askJettonWallet and as the
+                                   // provide_lp counterpart address for the TON leg
+    ptonWallet: address          // immutable, no setter — STON.fi's own wallet for pTON
+    quoteSignerKey: uint256
+    rewardJettonWallet: address  // settable via admin — same chicken-and-egg as Vault's jettonWallet
+    paused: bool
     accumulated: coins
     minCycleValue: coins
     minCycleInterval: uint32
-    cranBounty: coins
-    state: uint8            // 0=Idle, 1=Swap, 2=Depositing
+    crankBountyBps: uint16       // basis points, not a flat amount — see tokenomics.md
+    state: uint8                 // 0=Idle, 1=Swap, 2=Depositing
     activeQueryId: uint64
     stuckAfter: uint32
     lastCycleAt: uint32
+    // plus pendingPairAmount/pendingMinLpOut (in-flight cycle context) and the usual
+    // pendingMinCycleValue/pendingMinCycleInterval/pendingCrankBountyBps/pendingEffectiveAt
+    // timelock fields, same asymmetry rule as the Vault
 }
 ```
+
+**Built.** `contracts/Router.tolk`, tested in `tests/Router.spec.ts` against the verified
+addresses in `docs/tokenomics.md`. Two design points resolved during the build, beyond
+what's sketched above:
+
+- `locker`, `stonfiRouter`, `stonfiTonkasWallet`, and `ptonWallet` are set once at deploy
+  and have **no setter anywhere in the contract** — deliberately, not an oversight. A
+  mutable "redirect where deposits or LP go" admin call would reintroduce exactly the
+  admin-trust surface the LP-token-policy disclosure above says doesn't exist. If STON.fi
+  ever migrates addresses, that's a new Router deployment, the same "no upgrade path"
+  philosophy as the Locker itself.
+- STON.fi's real swap/provide_lp forward-payload TL-B is transcribed field-for-field from
+  `ston-fi/dex-core-v2`'s `contracts/common/op.fc` and `ston-fi/sdk`'s `BaseRouterV2_1.ts`
+  / `PtonV2_1.ts`, not reverse-engineered — see `Router.tolk`'s header comment. The
+  `provide_lp` payload's `receiver` field is where the Locker gets set directly, confirming
+  the "LP token routing" section above: the LP never touches this contract.
 
 ---
 
