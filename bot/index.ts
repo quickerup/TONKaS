@@ -6,6 +6,14 @@ import { TonClient4 } from '@ton/ton';
 import { createConnector, getConnectLink, getReopenWalletLink, requestTransaction, waitForConnection } from './tonConnect';
 import { buildMultisigConfig, computeMultisigAddress, buildDeployRequest } from './multisigDeploy';
 import { Multisig } from '../wrappers/Multisig';
+import { registerDeployCallbacks, startDeployFlow, DeployDescriptor } from './deployFlow';
+import { computeLockerAddress, buildLockerDeployRequest } from './lockerDeploy';
+import { LiquidityLocker } from '../wrappers/LiquidityLocker';
+import { computeRegistryAddress, buildRegistryDeployRequest, CURVE } from './registryDeploy';
+import { SlotRegistry } from '../wrappers/SlotRegistry';
+
+// The real, already-deployed, already-verified multisig -- see the commit that deployed it.
+const MULTISIG_ADDRESS = Address.parse('EQDjHFKV_zZ1fATzlktn1Nqq1bAvSJDns3S-FKjlFtTLlEvg');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) throw new Error('TELEGRAM_BOT_TOKEN not set in .env');
@@ -41,8 +49,80 @@ async function isActive(address: Address): Promise<boolean> {
 
 bot.command('start', async (ctx) => {
     await ctx.reply(
-        'TONkAS admin bot.\n\n/deploy_multisig — deploy the real 1-of-1 multisig on MAINNET, owned by whichever wallet you connect next. This spends real TON and is irreversible.'
+        'TONkAS admin bot.\n\n' +
+            '/deploy_multisig — deploy the real 1-of-1 multisig on MAINNET (already done: EQDjHFKV_zZ1fATzlktn1Nqq1bAvSJDns3S-FKjlFtTLlEvg)\n' +
+            '/deploy_locker — deploy the real LiquidityLocker on MAINNET\n\n' +
+            'Each spends real TON and is irreversible.'
     );
+});
+
+bot.command('deploy_locker', async (ctx) => {
+    log(`/deploy_locker received from chat ${ctx.chat.id}`);
+    if (!fs.existsSync(__dirname + '/../build/LiquidityLocker.compiled.json')) {
+        await ctx.reply('LiquidityLocker.compiled.json not found — run `npx blueprint build LiquidityLocker` first.');
+        return;
+    }
+    const lockerCode = loadCode('LiquidityLocker');
+    const { locker, address } = computeLockerAddress(lockerCode);
+
+    const descriptor: DeployDescriptor = {
+        name: 'LiquidityLocker',
+        address,
+        describe: () =>
+            `Computed LiquidityLocker address: ${address.toString()}\n` +
+            `No admin, no privileged functions — deployer identity doesn't matter to the contract's own logic.`,
+        buildRequest: (owner) => buildLockerDeployRequest(locker, owner),
+        spendWarning: '~0.05 TON',
+        verify: async (client, addr) => {
+            const opened = client.open(LiquidityLocker.createFromAddress(addr));
+            const isLpLocker = await opened.getIsLpLocker();
+            if (!isLpLocker) throw new Error('isLpLocker() returned false — code deployed but marker check failed');
+            return `isLpLocker() confirmed true.`;
+        },
+    };
+
+    await startDeployFlow(bot, ctx, descriptor);
+});
+
+bot.command('deploy_registry', async (ctx) => {
+    log(`/deploy_registry received from chat ${ctx.chat.id}`);
+    if (!fs.existsSync(__dirname + '/../build/SlotRegistry.compiled.json') || !fs.existsSync(__dirname + '/../build/SlotAccount.compiled.json')) {
+        await ctx.reply('SlotRegistry/SlotAccount build artifacts not found — run `npx blueprint build SlotRegistry` and `SlotAccount` first.');
+        return;
+    }
+    const registryCode = loadCode('SlotRegistry');
+    const accountCode = loadCode('SlotAccount');
+    const { registry, address } = computeRegistryAddress(MULTISIG_ADDRESS, registryCode, accountCode);
+
+    const descriptor: DeployDescriptor = {
+        name: 'SlotRegistry',
+        address,
+        describe: () =>
+            `Computed SlotRegistry address: ${address.toString()}\n` +
+            `admin: ${MULTISIG_ADDRESS.toString()} (real multisig)\n` +
+            `router: ${MULTISIG_ADDRESS.toString()} (placeholder until Router deploys in Step 5, then SetRouter)\n` +
+            `curve: basePrice ${CURVE.basePrice} nanoTON, ${CURVE.num}/${CURVE.den} (=1.15), maxSlots ${CURVE.maxSlots}\n` +
+            `paused: false`,
+        buildRequest: (owner) => buildRegistryDeployRequest(registry, owner),
+        spendWarning: '~0.05 TON',
+        verify: async (client, addr) => {
+            const opened = client.open(SlotRegistry.createFromAddress(addr));
+            const admin = await opened.getAdminAddress();
+            const curve = await opened.getCurveParams();
+            const paused = await opened.getIsPaused();
+            if (!admin.equals(MULTISIG_ADDRESS)) throw new Error(`admin mismatch: got ${admin.toString()}`);
+            if (curve.basePrice !== CURVE.basePrice || curve.num !== CURVE.num || curve.den !== CURVE.den || curve.maxSlots !== CURVE.maxSlots) {
+                throw new Error(`curve mismatch: got ${JSON.stringify(curve, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))}`);
+            }
+            return (
+                `admin confirmed = real multisig.\n` +
+                `curve confirmed: basePrice ${curve.basePrice}, ${curve.num}/${curve.den}, maxSlots ${curve.maxSlots}.\n` +
+                `paused: ${paused}`
+            );
+        },
+    };
+
+    await startDeployFlow(bot, ctx, descriptor);
 });
 
 bot.command('deploy_multisig', async (ctx) => {
@@ -153,6 +233,8 @@ bot.callbackQuery('confirm_deploy', async (cbCtx) => {
             `Raw result: ${JSON.stringify(result.result, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))}`
     );
 });
+
+registerDeployCallbacks(bot, client);
 
 bot.catch((err) => {
     log(`UNHANDLED BOT ERROR: ${err.message}`);
