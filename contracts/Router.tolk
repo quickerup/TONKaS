@@ -164,7 +164,23 @@ struct (0x80005407) ApplyLimits {
     queryId: uint64
 }
 
-type RootMessage = ExecuteCycle | ResetStuckCycle | RouterForward | JettonNotify | SetPaused | SetQuoteSignerKey | SetRewardJettonWallet | ProposeLimits | ApplyLimits
+// A provide_lp jetton leg that STON.fi rejects (e.g. slippage moved past minLpOut between
+// quote and execution) refunds as a JettonNotify that lands while state is already back to
+// Idle — correctly a no-op there (see the JettonNotify handler below), but that leaves the
+// refunded TONkAS stranded in this contract's own jetton wallet with no path back into
+// circulation. This sweeps it to the Locker: permanent lock, no pairing, no new slippage
+// surface — same treatment as the founder's original leftover tokens (docs/tokenomics.md).
+// Permissionless like ResetStuckCycle, for the same reason: it can only move stuck value
+// into an already-more-restrictive contract, never out of one. The caller supplies the
+// amount because a contract can't read its own jetton wallet's balance synchronously; an
+// inflated amount just makes the jetton wallet itself reject/bounce the transfer, not
+// something this contract needs to (or can) verify in advance.
+struct (0x80005408) SweepStrandedJettons {
+    queryId: uint64
+    amount: coins
+}
+
+type RootMessage = ExecuteCycle | ResetStuckCycle | RouterForward | JettonNotify | SetPaused | SetQuoteSignerKey | SetRewardJettonWallet | ProposeLimits | ApplyLimits | SweepStrandedJettons
 
 const STATE_IDLE = 0;
 const STATE_SWAP = 1;
@@ -182,6 +198,14 @@ const DEPOSIT_JETTON_GAS = 300000000; // 0.3 TON — jetton wallet processing + 
 // Gas constants are sized generously off STON.fi's own SDK defaults (BaseRouterV2_1's
 // gasConstants), not finely tuned — exact tuning is a testnet-integration concern, not a
 // sandbox-provable one; see this file's header comment.
+
+// Every cycle spends ~SWAP_GAS + DEPOSIT_TON_GAS + DEPOSIT_JETTON_GAS (~0.9 TON) from the
+// Router's own balance on real DEX interaction gas, not from `accumulated` — left
+// unaccounted for, the Router's balance drains over time with nothing replenishing it.
+// GAS_SKIM is held back from cycleAmount (not sent anywhere — simply excluded from what
+// gets spent) each cycle to self-fund that cost, sized a bit above the real total for
+// buffer growth. See "self-funding gas" in the commit that added this.
+const GAS_SKIM = 1000000000; // 1 TON — covers the ~0.9 TON real cost plus ~0.1 TON buffer
 
 // stonfiRouter/stonfiTonkasWallet/ptonWallet and locker are set once at deploy and have no
 // setter anywhere in this file — deliberately structurally immutable, not just
@@ -339,7 +363,8 @@ fun onInternalMessage(in: InMessage) {
             assert (thresholdMet) throw ERR_BUSY;
 
             val bounty = st.accumulated * st.crankBountyBps / 10000;
-            val cycleAmount = st.accumulated - bounty;
+            val gasSkim = min(GAS_SKIM, st.accumulated - bounty); // never skim more than what's left after the bounty
+            val cycleAmount = st.accumulated - bounty - gasSkim;
             val swapAmount = cycleAmount / 2;
             val pairAmount = cycleAmount - swapAmount;
 
@@ -475,6 +500,31 @@ fun onInternalMessage(in: InMessage) {
             st.save();
         }
 
+        // Permissionless — see this struct's own comment in the declarations above for why
+        // that's safe here. The caller-supplied amount isn't independently verified against
+        // this contract's real jetton balance (can't be, synchronously); an inflated amount
+        // just makes the jetton wallet itself reject or bounce the transfer, touching no
+        // Router storage either way.
+        SweepStrandedJettons => {
+            val st = RouterStorage.load();
+            reserveGramsOnBalance(MIN_ROUTER_RESERVE, RESERVE_MODE_AT_MOST);
+            val sweep = createMessage({
+                bounce: BounceMode.RichBounce,
+                value: DEPOSIT_JETTON_GAS,
+                dest: st.rewardJettonWallet,
+                body: JettonTransfer {
+                    queryId: msg.queryId,
+                    amount: msg.amount,
+                    destination: st.locker,
+                    responseDestination: in.senderAddress,
+                    customPayload: null,
+                    forwardTonAmount: 0,
+                    forwardPayload: beginCell().endCell().beginParse(),
+                },
+            });
+            sweep.send(SEND_MODE_PAY_FEES_SEPARATELY);
+        }
+
         SetPaused => {
             var st = RouterStorage.load();
             assert (in.senderAddress == st.admin) throw ERR_NOT_OWNER;
@@ -586,4 +636,13 @@ get fun cycleState(): (int, int, int, int) {
 get fun pendingLimits(): (int, int, int, int) {
     val st = RouterStorage.load();
     return (st.pendingMinCycleValue, st.pendingMinCycleInterval, st.pendingCrankBountyBps, st.pendingEffectiveAt);
+}
+
+// Inferred from the live contract balance rather than tracked explicitly in storage — no
+// extra storage slot, and this is monitoring-only, not something contract logic depends on.
+// What's left after the rent-exempt reserve and whatever's held in-flight for the current
+// cycle's pairing leg is roughly the accumulated GAS_SKIM buffer.
+get fun gasReserveEstimate(): int {
+    val st = RouterStorage.load();
+    return contract.getOriginalBalance() - MIN_ROUTER_RESERVE - st.accumulated - st.pendingPairAmount;
 }

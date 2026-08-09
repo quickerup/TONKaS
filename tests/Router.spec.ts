@@ -5,6 +5,7 @@ import {
     Router,
     Quote,
     QUOTE_MAGIC,
+    GAS_SKIM,
     signQuote,
     decodePtonTransfer,
     decodeJettonTransfer,
@@ -204,7 +205,9 @@ describe('Router', () => {
         expect(swapTx).toBeDefined();
         const body = (swapTx!.inMessage as any).body as Cell;
         const decoded = decodePtonTransfer(body);
-        expect(decoded.tonAmount).toBe((accumulatedBefore - (accumulatedBefore * 150n) / 10000n) / 2n);
+        const bountyBefore = (accumulatedBefore * 150n) / 10000n;
+        const gasSkimBefore = GAS_SKIM < accumulatedBefore - bountyBefore ? GAS_SKIM : accumulatedBefore - bountyBefore;
+        expect(decoded.tonAmount).toBe((accumulatedBefore - bountyBefore - gasSkimBefore) / 2n);
         expect(decoded.refundAddress).toEqualAddress(router.address);
         expect(decoded.forwardPayload).not.toBeNull();
 
@@ -219,6 +222,96 @@ describe('Router', () => {
         expect(state.state).toBe(STATE_SWAP);
         expect(state.activeQueryId).toBe(99n);
         expect(await router.getAccumulated()).toBe(0n);
+    });
+
+    it('retains GAS_SKIM rather than spending the full accumulated-minus-bounty on a normal-sized cycle', async () => {
+        const buyer = await blockchain.treasury('buyer');
+        await router.sendPlainDeposit(buyer.getSender(), { value: toNano('20') });
+        const accumulatedBefore = await router.getAccumulated();
+        const bounty = (accumulatedBefore * 150n) / 10000n;
+        const afterBounty = accumulatedBefore - bounty;
+        expect(afterBounty).toBeGreaterThan(GAS_SKIM); // sanity: this cycle is well above the skim
+
+        const { quote, signature } = await makeQuote();
+        const result = await router.sendExecuteCycle(cranker.getSender(), { quote, signature, value: toNano('1') });
+        expect(result.transactions).toHaveTransaction({ from: cranker.address, to: router.address, success: true });
+
+        const swapTx = result.transactions.find(
+            (t) => t.inMessage?.info.type === 'internal' && t.inMessage.info.dest?.toString() === ptonWallet.address.toString()
+        );
+        const decoded = decodePtonTransfer((swapTx!.inMessage as any).body as Cell);
+
+        const naiveSwapAmount = afterBounty / 2n; // what the swap leg would be with no skim held back
+        const actualCycleAmount = afterBounty - GAS_SKIM;
+        expect(decoded.tonAmount).toBe(actualCycleAmount / 2n);
+        expect(decoded.tonAmount).toBeLessThan(naiveSwapAmount);
+    });
+
+    it('skims only what is available, without underflow, when accumulated-minus-bounty is smaller than GAS_SKIM', async () => {
+        // Get a real cycle to run first so lastCycleAt is nonzero, then let the time clause
+        // (not the value clause) admit a second, much smaller cycle.
+        await router.sendPlainDeposit(admin.getSender(), { value: toNano('20') });
+        const { quote: bigQuote, signature: bigSig } = await makeQuote();
+        await router.sendExecuteCycle(cranker.getSender(), { quote: bigQuote, signature: bigSig, value: toNano('1') });
+        // Resolve that cycle back to Idle so a second ExecuteCycle is legal.
+        await router.sendJettonNotify(rewardJettonWallet.getSender(), {
+            amount: toNano('1000'),
+            sender: stonfiRouter.address,
+            value: toNano('1'),
+        });
+        expect((await router.getCycleState()).state).toBe(STATE_IDLE);
+
+        const tinyDeposit = toNano('0.5'); // well under GAS_SKIM (1 TON)
+        await router.sendPlainDeposit(admin.getSender(), { value: tinyDeposit });
+        const accumulatedBefore = await router.getAccumulated();
+        expect(accumulatedBefore).toBeLessThan(GAS_SKIM);
+
+        blockchain.now = (blockchain.now ?? Math.floor(Date.now() / 1000)) + 21601; // past minCycleInterval
+        const { quote, signature } = await makeQuote();
+        const result = await router.sendExecuteCycle(cranker.getSender(), { quote, signature, value: toNano('1') });
+        expect(result.transactions).toHaveTransaction({ from: cranker.address, to: router.address, success: true });
+
+        const bounty = (accumulatedBefore * 150n) / 10000n;
+        const availableAfterBounty = accumulatedBefore - bounty;
+
+        const swapTx = result.transactions.find(
+            (t) => t.inMessage?.info.type === 'internal' && t.inMessage.info.dest?.toString() === ptonWallet.address.toString()
+        );
+        const decoded = decodePtonTransfer((swapTx!.inMessage as any).body as Cell);
+        // All of what's left after the bounty gets skimmed (min(GAS_SKIM, available) = available),
+        // so cycleAmount is 0 — not negative, not throwing.
+        expect(decoded.tonAmount).toBe(0n);
+        expect(availableAfterBounty).toBeLessThan(GAS_SKIM);
+    });
+
+    it('SweepStrandedJettons forwards the specified amount to the Locker, callable by anyone', async () => {
+        const stranger = await blockchain.treasury('stranger');
+        const result = await router.sendSweepStrandedJettons(stranger.getSender(), {
+            queryId: 5n,
+            amount: toNano('12345'),
+            value: toNano('0.5'),
+        });
+        expect(result.transactions).toHaveTransaction({ from: stranger.address, to: router.address, success: true });
+
+        const sweepTx = result.transactions.find(
+            (t) => t.inMessage?.info.type === 'internal' && t.inMessage.info.dest?.toString() === rewardJettonWallet.address.toString()
+        );
+        expect(sweepTx).toBeDefined();
+        const decoded = decodeJettonTransfer((sweepTx!.inMessage as any).body as Cell);
+        expect(decoded.amount).toBe(toNano('12345'));
+        expect(decoded.destination).toEqualAddress(locker.address);
+    });
+
+    it('SweepStrandedJettons does not touch Router state, even for a claimed amount that could exceed the real balance', async () => {
+        await router.sendPlainDeposit(admin.getSender(), { value: toNano('5') });
+        const accumulatedBefore = await router.getAccumulated();
+        const stateBefore = await router.getCycleState();
+
+        const stranger = await blockchain.treasury('stranger');
+        await router.sendSweepStrandedJettons(stranger.getSender(), { amount: toNano('999999999'), value: toNano('0.5') });
+
+        expect(await router.getAccumulated()).toBe(accumulatedBefore);
+        expect((await router.getCycleState()).state).toBe(stateBefore.state);
     });
 
     it('pays no bounty message when crankBountyBps is 0', async () => {

@@ -379,6 +379,19 @@ what's sketched above:
   / `PtonV2_1.ts`, not reverse-engineered — see `Router.tolk`'s header comment. The
   `provide_lp` payload's `receiver` field is where the Locker gets set directly, confirming
   the "LP token routing" section above: the LP never touches this contract.
+- **Self-funding gas.** Real DEX interaction gas (~0.9 TON/cycle across the swap and both
+  provide_lp legs) is spent from the Router's own balance, not from `accumulated` — a
+  `GAS_SKIM` constant (1 TON) is held back from `cycleAmount` each cycle (never sent
+  anywhere, simply excluded from what gets spent) so the balance replenishes itself instead
+  of draining over time. Guarded with `min(GAS_SKIM, accumulated - bounty)` so a
+  pathologically small cycle skims whatever's available rather than underflowing.
+- **Stranded-jetton sweep.** A provide_lp jetton leg STON.fi rejects (e.g. slippage moved
+  past `minLpOut` between quote and execution) refunds as a `JettonNotify` that lands while
+  state is already back to Idle — correctly a no-op there, but that leaves the refunded
+  TONkAS stranded in the Router's own jetton wallet. `SweepStrandedJettons` forwards a
+  caller-specified amount to the Locker (permanent lock, no pairing) — permissionless, same
+  reasoning as `ResetStuckCycle`: it can only move stuck value into an already-more-
+  restrictive contract, never out of one.
 
 ---
 

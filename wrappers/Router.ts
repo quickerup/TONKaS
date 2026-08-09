@@ -2,6 +2,7 @@ import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, 
 import { sign } from '@ton/crypto';
 
 export const QUOTE_MAGIC = 0x51544531; // "QTE1", must match Router.tolk
+export const GAS_SKIM = 1000000000n; // 1 TON, must match Router.tolk
 
 export type Quote = {
     magic: number;
@@ -67,8 +68,10 @@ export function decodeJettonTransfer(body: Cell) {
     const hasCustomPayload = s.loadBit();
     const customPayload = hasCustomPayload ? s.loadRef() : null;
     const forwardTonAmount = s.loadCoins();
-    const hasForwardPayload = s.loadBit();
-    const forwardPayload = hasForwardPayload ? s.loadRef() : s.asCell();
+    // A genuinely empty forward_payload (Router.tolk's SweepStrandedJettons/RewardVault's
+    // payout both use `beginCell().endCell().beginParse()`) splices as literally zero bits —
+    // no discriminator bit at all, since RemainingBitsAndRefs appends exactly what's given.
+    const forwardPayload = s.remainingBits === 0 && s.remainingRefs === 0 ? null : s.loadBit() ? s.loadRef() : s.asCell();
     return { queryId, amount, destination, responseDestination, customPayload, forwardTonAmount, forwardPayload };
 }
 
@@ -171,6 +174,7 @@ export const OP_SET_QUOTE_SIGNER_KEY = 0x80005404;
 export const OP_SET_REWARD_JETTON_WALLET = 0x80005405;
 export const OP_PROPOSE_LIMITS = 0x80005406;
 export const OP_APPLY_LIMITS = 0x80005407;
+export const OP_SWEEP_STRANDED_JETTONS = 0x80005408;
 
 export class Router implements Contract {
     constructor(
@@ -312,6 +316,18 @@ export class Router implements Contract {
         });
     }
 
+    async sendSweepStrandedJettons(provider: ContractProvider, via: Sender, opts: { queryId?: bigint; amount: bigint; value: bigint }) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(OP_SWEEP_STRANDED_JETTONS, 32)
+                .storeUint(opts.queryId ?? 0n, 64)
+                .storeCoins(opts.amount)
+                .endCell(),
+        });
+    }
+
     async getAdminAddress(provider: ContractProvider): Promise<Address> {
         const result = await provider.get('adminAddress', []);
         return result.stack.readAddress();
@@ -380,5 +396,10 @@ export class Router implements Contract {
             crankBountyBps: result.stack.readNumber(),
             effectiveAt: result.stack.readNumber(),
         };
+    }
+
+    async getGasReserveEstimate(provider: ContractProvider): Promise<bigint> {
+        const result = await provider.get('gasReserveEstimate', []);
+        return result.stack.readBigNumber();
     }
 }
