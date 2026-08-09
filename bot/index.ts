@@ -11,6 +11,8 @@ import { computeLockerAddress, buildLockerDeployRequest } from './lockerDeploy';
 import { LiquidityLocker } from '../wrappers/LiquidityLocker';
 import { computeRegistryAddress, buildRegistryDeployRequest, CURVE } from './registryDeploy';
 import { SlotRegistry } from '../wrappers/SlotRegistry';
+import { computeVaultAddress, buildVaultDeployRequest, ORACLE_SIGNER_KEY, HALVING_INTERVAL, BASE_RATE, MAX_PER_CLAIM, BUCKET_CAPACITY } from './vaultDeploy';
+import { RewardVault } from '../wrappers/RewardVault';
 
 // The real, already-deployed, already-verified multisig -- see the commit that deployed it.
 const MULTISIG_ADDRESS = Address.parse('EQDjHFKV_zZ1fATzlktn1Nqq1bAvSJDns3S-FKjlFtTLlEvg');
@@ -118,6 +120,54 @@ bot.command('deploy_registry', async (ctx) => {
                 `admin confirmed = real multisig.\n` +
                 `curve confirmed: basePrice ${curve.basePrice}, ${curve.num}/${curve.den}, maxSlots ${curve.maxSlots}.\n` +
                 `paused: ${paused}`
+            );
+        },
+    };
+
+    await startDeployFlow(bot, ctx, descriptor);
+});
+
+bot.command('deploy_vault', async (ctx) => {
+    log(`/deploy_vault received from chat ${ctx.chat.id}`);
+    if (!fs.existsSync(__dirname + '/../build/RewardVault.compiled.json') || !fs.existsSync(__dirname + '/../build/ClaimAccount.compiled.json')) {
+        await ctx.reply('RewardVault/ClaimAccount build artifacts not found — run `npx blueprint build RewardVault` and `ClaimAccount` first.');
+        return;
+    }
+    const vaultCode = loadCode('RewardVault');
+    const claimAccountCode = loadCode('ClaimAccount');
+    const { vault, address } = computeVaultAddress(MULTISIG_ADDRESS, vaultCode, claimAccountCode);
+
+    const descriptor: DeployDescriptor = {
+        name: 'RewardVault',
+        address,
+        describe: () =>
+            `Computed RewardVault address: ${address.toString()}\n` +
+            `admin: ${MULTISIG_ADDRESS.toString()} (real multisig)\n` +
+            `signerKey: ${ORACLE_SIGNER_KEY.toString(16)} (real oracle from Step 0)\n` +
+            `jettonWallet: placeholder (multisig) — SetJettonWallet once computed\n` +
+            `halvingInterval: ${HALVING_INTERVAL} baseRate: ${BASE_RATE} maxPerClaim: ${MAX_PER_CLAIM}\n` +
+            `bucketCapacity: ${BUCKET_CAPACITY} (PROVISIONAL, confirmed for this deploy — see docs/tokenomics.md)\n` +
+            `paused: true`,
+        buildRequest: (owner) => buildVaultDeployRequest(vault, owner),
+        spendWarning: '~0.05 TON',
+        verify: async (client, addr) => {
+            const opened = client.open(RewardVault.createFromAddress(addr));
+            const admin = await opened.getAdminAddress();
+            const signerKey = await opened.getSignerKey();
+            const paused = await opened.getIsPaused();
+            const epochRate = await opened.getCurrentEpochRate();
+            const bucket = await opened.getBucketState();
+            if (!admin.equals(MULTISIG_ADDRESS)) throw new Error(`admin mismatch: got ${admin.toString()}`);
+            if (signerKey !== ORACLE_SIGNER_KEY) throw new Error(`signerKey mismatch: got ${signerKey.toString(16)}`);
+            if (epochRate !== BASE_RATE) throw new Error(`currentEpochRate mismatch: got ${epochRate} expected ${BASE_RATE} (epoch 0 should equal baseRate)`);
+            if (bucket.capacity !== BUCKET_CAPACITY) throw new Error(`bucket capacity mismatch: got ${bucket.capacity}`);
+            return (
+                `admin confirmed = real multisig.\n` +
+                `signerKey confirmed = real oracle pubkey.\n` +
+                `currentEpochRate confirmed = baseRate (epoch 0).\n` +
+                `bucket: capacity ${bucket.capacity}, available ${bucket.available}.\n` +
+                `paused: ${paused}\n\n` +
+                `NOT YET DONE: SetJettonWallet, and a real test claim before the 9B transfer — separate follow-up.`
             );
         },
     };
