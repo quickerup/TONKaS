@@ -16,8 +16,9 @@
         "tsx": "^4.23.11"
     },
     "devDependencies": {
+        "@cloudflare/workers-types": "^5.20260809.1",
         "@tact-lang/compiler": ">=1.6.13 <2.0.0",
-        "@ton-community/func-js": ">=0.10.0",
+        "@ton-community/func-js": "0.6.3-tvmbeta.3",
         "@ton/blueprint": ">=0.40.0",
         "@ton/crypto": "^3.3.0",
         "@ton/sandbox": ">=0.37.0",
@@ -31,5 +32,9 @@
         "ts-jest": "^29.4.1",
         "ts-node": "^10.9.2",
         "typescript": "^5.9.2"
+    },
+    "overrides": {
+        "@ton-community/func-js-bin": "0.4.5-tvmbeta.3",
+        "@ton-community/func-js": "0.6.3-tvmbeta.3"
     }
 }

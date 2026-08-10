@@ -2,38 +2,45 @@ import TonConnect, { Wallet, SendTransactionRequest, SendTransactionResponse } f
 import { FileStorage } from './storage';
 
 // Reusable across every future mainnet action this bot handles, not just the multisig
-// deploy — see the commit that added this. Targets Telegram Wallet specifically: it's
-// the wallet confirmed as the one holding the signer key for this project, and it opens
-// as a Telegram attachment rather than switching to a separate app, which is the fit the
-// "native to the chat" requirement calls for. TON Connect has no wallet-agnostic universal
+// deploy — see the commit that added this. TON Connect has no wallet-agnostic universal
 // link — every wallet has its own bridge + link format (confirmed against the official
-// wallets-v2.json registry) — so this is a deliberate, not arbitrary, choice.
-const TELEGRAM_WALLET = {
-    bridgeUrl: 'https://walletbot.me/tonconnect-bridge/bridge',
-    universalLink: 'https://t.me/wallet?attach=wallet',
+// wallets-v2.json registry) — so the wallet target is explicit, not guessed.
+export type WalletName = 'telegram-wallet' | 'tonkeeper';
+
+const WALLETS: Record<WalletName, { bridgeUrl: string; universalLink: string }> = {
+    'telegram-wallet': {
+        bridgeUrl: 'https://walletbot.me/tonconnect-bridge/bridge',
+        universalLink: 'https://t.me/wallet?attach=wallet',
+    },
+    tonkeeper: {
+        bridgeUrl: 'https://bridge.tonapi.io/bridge',
+        universalLink: 'https://app.tonkeeper.com/ton-connect',
+    },
 };
 
 const MANIFEST_URL = 'https://raw.githubusercontent.com/quickerup/TONKaS/main/tonconnect-manifest.json';
 
-export function createConnector(chatId: number | string): TonConnect {
+// Each wallet gets its own storage namespace -- reusing the same session file across
+// different wallet targets would mix an old bridge session with a new one.
+export function createConnector(chatId: number | string, wallet: WalletName = 'telegram-wallet'): TonConnect {
     return new TonConnect({
         manifestUrl: MANIFEST_URL,
-        storage: new FileStorage(chatId),
+        storage: new FileStorage(`${chatId}_${wallet}`),
     });
 }
 
 // Returns the universal link for the "Connect Wallet" button. The wallet's reply lands on
 // connector.onStatusChange, not on this call's return value.
-export function getConnectLink(connector: TonConnect): string {
-    return connector.connect(TELEGRAM_WALLET);
+export function getConnectLink(connector: TonConnect, wallet: WalletName = 'telegram-wallet'): string {
+    return connector.connect(WALLETS[wallet]);
 }
 
-// Re-opening Telegram Wallet's own attachment brings any request already pushed over the
+// Re-opening the wallet's own app/attachment brings any request already pushed over the
 // live bridge session (via sendTransaction below) to the front for review — TON Connect's
 // bridge is push-based once connected; this link doesn't carry the transaction itself, the
 // bridge message already sent it.
-export function getReopenWalletLink(): string {
-    return TELEGRAM_WALLET.universalLink;
+export function getReopenWalletLink(wallet: WalletName = 'telegram-wallet'): string {
+    return WALLETS[wallet].universalLink;
 }
 
 // Fires the request over the bridge and resolves with the wallet's signed reply (or

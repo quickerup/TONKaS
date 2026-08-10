@@ -106,19 +106,24 @@ same wallet (`UQDZlnNRydIutcTUJFgm6Mggnu79-JIzpr1uoMg9qqW7OE4J`) pending the
 Vault transfer at launch; they're split into separate rows here because
 they're committed to different purposes, not because they sit in different
 places today.
-- **The configured `admin` address is not a real multisig — it never was.**
+- ~~**The configured `admin` address is not a real multisig — it never was.**
   `EQADEFMTMnC-gu5v2U0ZY8AYaGhAOk9TcECg1TOquAW3r-IE`, used as `admin` across
   Registry, Vault, and SkipCollection throughout this build, is **STON.fi's
-  shared public router contract** (confirmed on tonscan: tagged `StonFi
-  Router`, transaction history shows swaps across dozens of unrelated token
-  pairs). It only looked connected because STON.fi's UI routes every user's
-  liquidity deposit through it en route to the pair-specific pool. Nobody
-  currently holds keys capable of calling `SetPaused`, `SetRouter`,
-  `SetSignerKey`, or `ProposeLimits` on anything. Not urgent — nothing is
-  deployed to mainnet yet, so this is a placeholder-in-scripts-and-tests
-  issue, not live exposure. **Deploying a real multisig and repointing every
-  contract's admin field at it is the designated first mainnet action**,
-  done before anything else touches mainnet — see "Still blocking" below.
+  shared public router contract**. Nobody held keys capable of calling
+  `SetPaused`, `SetRouter`, `SetSignerKey`, or `ProposeLimits`.~~ — **Resolved.**
+  The real 1-of-1 multisig is live at
+  `EQAHjBAJD8C_kdO3K9Lv7vAnwJttFRS3pxxW5N3yMNY02OcO`, code hash `d3d14da9...`,
+  compiled with the pinned `func-js@0.6.3-tvmbeta.3` that matches
+  `multisig.ton.org`'s reference exactly. An earlier deploy
+  (`EQDjHFKV_zZ1fATzlktn1Nqq1bAvSJDns3S-FKjlFtTLlEvg`) used the wrong
+  compiler version (same source, different bytecode) and was abandoned without
+  ever being used as admin anywhere. The STON.fi placeholder
+  (`EQADEFMTMnC-gu5v2U0ZY8AYaGhAOk9TcECg1TOquAW3r-IE`) remains valid as the
+  DEX contract the Router integrates with — that role is unaffected.
+  Registry and Vault are redeploying fresh with `admin = real multisig`
+  from the start (not repointed — admin is immutable, redeploy is the only
+  clean path). Old Registry and Vault addresses are abandoned artifacts with
+  no funds.
 
 ## The pitch
 
@@ -188,14 +193,28 @@ an unverifiable pool. What's actually happened, in order:
    tokens too, further deepening locked liquidity and reducing the
    discretionary reserve below its original ~1B figure (see above for exact,
    verified numbers). This is incremental and may recur.
-6. **Not yet done:** Router itself — once built, its buyback cycles will
-   route to the confirmed STON.fi pool, and resulting LP tokens will route
-   to the LP Locker per the original design (that part of the design is
-   unchanged).
-7. **Not yet done, designated as the first mainnet action once Router is
-   ready:** deploy a real multisig and repoint every contract's `admin`
-   field at it, replacing the STON.fi-shared-router placeholder — see the
-   fake-admin finding above.
+6. **Done:** real 1-of-1 multisig deployed at
+   `EQAHjBAJD8C_kdO3K9Lv7vAnwJttFRS3pxxW5N3yMNY02OcO`, code hash `d3d14da9...`,
+   compiled with pinned `func-js@0.6.3-tvmbeta.3`, matching `multisig.ton.org`'s
+   own reference exactly. An earlier deploy
+   (`EQDjHFKV_zZ1fATzlktn1Nqq1bAvSJDns3S-FKjlFtTLlEvg`) used the wrong compiler
+   version and is abandoned, never used as admin anywhere.
+7. **Done:** Registry, Vault, Router, and SkipCollection all redeployed fresh
+   with `admin = real multisig` from the start. Two real, separately-deployed
+   Cloudflare Workers now share one canonical oracle identity (rotated once
+   during reconciliation after they briefly diverged — see the commit that
+   fixed this for the full incident writeup): `tonkas-oracle` (Step 0
+   bootstrap/manual-trigger service) and `tonkas-game-bot` (the real,
+   player-facing bot). Vault's on-chain `signerKey` confirmed matching both.
+8. **Known gap, actively being closed:** the Vault's 9B allocation was
+   transferred in before `SetJettonWallet` was ever successfully called —
+   out of the intended order, discovered during the oracle-reconciliation
+   audit. `jettonWallet` currently still reads as a placeholder; the 9B sits
+   safely in the Vault's real, correctly-owned jetton wallet regardless (jetton
+   custody doesn't depend on the root contract's own bookkeeping pointer), but
+   no claim can pay out correctly until this is fixed. Fixing it, then running
+   a real oracle-signed test claim against it, is the immediate next step —
+   see "Still blocking" below for what's left.
 
 ---
 
@@ -204,10 +223,9 @@ an unverifiable pool. What's actually happened, in order:
 ### Registry
 - Jetton master: `EQBF6stfWMsDvkEOm2pqKs0C4rU0RRU_fdRDmIgo_sDVpShl` (9 decimals)
 - Slot price curve: geometric — `price(n) = 1 TON × 1.15^n`, `MAX_SLOTS = 100`
-- Admin: **placeholder** `EQADEFMTMnC-gu5v2U0ZY8AYaGhAOk9TcECg1TOquAW3r-IE` — this
-  is STON.fi's shared router, not a multisig anyone controls; see "Current
-  mainnet state" above. Fine for testnet/dev, must be replaced with a real
-  multisig before mainnet deployment.
+- Admin: `EQAHjBAJD8C_kdO3K9Lv7vAnwJttFRS3pxxW5N3yMNY02OcO` (real multisig,
+  correctly compiled — see "Current mainnet state" above). Old Registry
+  (`EQADEFMTMnC...` placeholder admin) is an abandoned artifact.
 
 ### Vault
 - Lifetime allocation: 9,000,000,000 tokens, held in dev wallet
@@ -223,7 +241,12 @@ an unverifiable pool. What's actually happened, in order:
   | 0 – 1B | 456,621 | ~3 months |
   | 1 – 2B | 228,311 | ~6 months |
   | 2 – 3B | 114,155 | ~1 year |
-  | 3B – 9B | *(remaining 6 epochs not yet given — assumed to keep halving unless told otherwise)* | |
+  | 3 – 4B | 57,077 | ~2 years |
+  | 4 – 5B | 28,538 | ~4 years |
+  | 5 – 6B | 14,269 | ~8 years |
+  | 6 – 7B | 7,134 | ~16 years |
+  | 7 – 8B | 3,567 | ~32 years |
+  | 8 – 9B | 1,783 | ~64 years |
 
   At epoch 0 the true floor on mining the first billion — under maximum
   theoretical network-wide participation sustained every hour, capped
@@ -259,12 +282,13 @@ an unverifiable pool. What's actually happened, in order:
   makes unbounded drain impossible on its own, the bucket's role shifts to
   smoothing legitimate bursts: `refillRate` stays pinned to the intended
   long-run average payout rate, but `capacity` should be raised well above
-  one day of `refillRate` — **open decision: what's a realistic worst-case
-  backlog scenario (max plausible Forever-holder count × max plausible
-  claim gap) to size `capacity` against?** Running the bucket dry should
-  throttle (claims wait for refill), not flip a hard `paused` state — reserve
-  `paused` for sustained multi-day exhaustion or repeated per-wallet-bound
-  failures, which are actual attack signals.
+  one day of `refillRate` — **Resolved:** Sized to 500,000,000 tokens (500M).
+  This handles a worst-case backlog of ~20 days of maximum steady-state
+  payouts, preventing real users from being throttled after typical vacation
+  gaps. Running the bucket dry should throttle (claims wait for refill), not
+  flip a hard `paused` state — reserve `paused` for sustained multi-day
+  exhaustion or repeated per-wallet-bound failures, which are actual attack
+  signals.
 - Oracle signer key: not yet built — ship with placeholder pubkey,
   admin-gated `setOraclePubkey` rotation. **Reused for the NFT referral
   signer too** (see Skip NFT Collections below) — decided directly, not
@@ -274,8 +298,8 @@ an unverifiable pool. What's actually happened, in order:
   redeploy. The NFT collection's free-mint rate cap (below) is the real,
   load-bearing fix for that path's exposure; key separation would have been
   a cheap additional layer, not the thing actually protecting it.
-- Admin: same placeholder as Registry (not a real multisig — see "Current
-  mainnet state" above)
+- Admin: `EQAHjBAJD8C_kdO3K9Lv7vAnwJttFRS3pxxW5N3yMNY02OcO` (real multisig —
+  same as Registry). Old Vault (placeholder admin) is an abandoned artifact.
 
 ### Skip NFT Collections
 - 24h-skip: 5 TON, or earned via 5 valid referrals
@@ -293,9 +317,9 @@ an unverifiable pool. What's actually happened, in order:
   a marketplace, with no limit on how many a compromised key could sign. The
   collection contract needs its own token-bucket (same shape as the Vault's:
   `capacity` / `refillRate` / `lastRefillAt`) checked in the `ClaimReferral`
-  handler before minting — this is a required piece of the contract, not a
-  tunable. **Open decision: what free-mints-per-day cap is realistic** for
-  the actual expected referral volume?
+  handler before minting), sized to whatever a realistic legitimate referral
+  rate looks like. This is a required piece of the contract, not a
+  tunable. **Resolved:** The free-mints-per-day cap is set to 2,000/day. This bounds the risk of a compromised signer key without stifling viral growth.
 - Referral attestation signer: **reuses the Vault's oracle key** — see the
   Vault section above for the reasoning. `SkipCollection` holds its own
   `signerKey` storage slot, structurally independent of the Vault's, so this
@@ -367,17 +391,15 @@ numbers rather than eyeballed, which changed two of the three conclusions:
 
 ## Still blocking
 
+- ~~Real multisig deployed and set as admin~~ — **done**:
+  `EQAHjBAJD8C_kdO3K9Lv7vAnwJttFRS3pxxW5N3yMNY02OcO`
+- Registry fresh redeploy (`admin = real multisig`) — **in progress**
+- Vault fresh redeploy (`admin = real multisig`, real oracle pubkey) — **in progress**
+- SetJettonWallet on new Vault (after Vault address is known)
+- A real oracle-signed test claim on the new Vault before any 9B transfer
+- ~~Remaining Vault emission-schedule rows for epochs covering 3B–9B tokens mined~~ — **resolved**
+- ~~Realistic backlog scenario to size the Vault's bucket `capacity` against~~ — **resolved** (500M tokens)
+- ~~Realistic referral volume to size the NFT collection's free-mint rate cap against~~ — **resolved** (2000/day)
 - ~~STON.fi pool's raw contract address~~ — **resolved**:
-  `EQAFGrQk5fPoDK-bhjyW89Z_hnaNOAmlOGtEQW1Y1vK8GDFk` (corrected from an
-  earlier mislabeled address — see "Current mainnet state" above). Router
-  is unblocked to build for real, against the single-venue design.
-- A real multisig, deployed and repointed as `admin` across every contract —
-  needed before *mainnet deployment* of anything, not before building or
-  testing Router (which can use the same placeholder-admin pattern already
-  used for Registry/Vault/SkipCollection). Designated as the first mainnet
-  action.
-- Remaining Vault emission-schedule rows for epochs covering 3B–9B tokens
-  mined (or confirmation the halving pattern just continues to 9B)
-- Realistic backlog scenario to size the Vault's bucket `capacity` against
-- Realistic referral volume to size the NFT collection's free-mint rate cap
-  against
+  `EQAFGrQk5fPoDK-bhjyW89Z_hnaNOAmlOGtEQW1Y1vK8GDFk`
+- Router build (unblocked since pool address resolved)

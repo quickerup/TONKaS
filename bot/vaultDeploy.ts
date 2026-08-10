@@ -4,9 +4,15 @@ import { RewardVault, RewardVaultConfig } from '../wrappers/RewardVault';
 
 const DEPLOY_VALUE = toNano('0.05');
 
-// Real oracle from Step 0 -- see the commit that deployed worker/, and
-// https://tonkas-oracle.duck47783.workers.dev/pubkey.
-export const ORACLE_PUBKEY_HEX = '1ec527f9a4e266724a26d318f86804edb8451c2299627768a5aafd600aebe9e4';
+// Canonical oracle identity, shared by tonkas-oracle (the Step 0 bootstrap/manual-trigger
+// service) and tonkas-game-bot (the real, player-facing bot) -- both verified independently
+// reporting this same pubkey via their /pubkey debug endpoints. Rotated to a fresh seed
+// during the oracle-reconciliation incident: the previous value here
+// (5f109dc8bd53d18f3262ed19efc0a979190cceab0f234f63998c0d23f5b4eba9) was a pubkey someone
+// had precomputed for a seed that was never actually set as either worker's ORACLE_SEED
+// secret, yet ended up hardcoded here and pushed on-chain via a mistaken SetSignerKey call
+// -- see that incident's commit for the full trail. https://tonkas-oracle.duck47783.workers.dev/pubkey
+export const ORACLE_PUBKEY_HEX = '3c1972911d1c9de74bbe66d83a42d4dc03dc8c2525be60aba93b29f1edfec1d4';
 export const ORACLE_SIGNER_KEY = BigInt('0x' + ORACLE_PUBKEY_HEX);
 
 const DECIMALS = 1_000_000_000n; // reward jetton has 9 decimals
@@ -53,7 +59,7 @@ export function buildVaultDeployRequest(vault: RewardVault, fromAddress: Address
     const stateInit = beginCell().store(storeStateInit(vault.init)).endCell();
 
     return {
-        validUntil: Math.floor(Date.now() / 1000) + 600,
+        validUntil: Math.floor(Date.now() / 1000) + 280,
         from: fromAddress.toRawString(),
         messages: [
             {

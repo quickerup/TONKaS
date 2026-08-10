@@ -3,16 +3,16 @@ import { SlotRegistry } from '../wrappers/SlotRegistry';
 import { compile, NetworkProvider } from '@ton/blueprint';
 
 // Resolved parameters — see docs/tokenomics.md "Registry".
-// PLACEHOLDER — this is STON.fi's shared router, not a real multisig. Fine for
-// testnet/dev; must be replaced before any mainnet deploy. See docs/tokenomics.md
-// "Current mainnet state" — deploying the real multisig is the designated first
-// mainnet action.
-const ADMIN = Address.parse('EQADEFMTMnC-gu5v2U0ZY8AYaGhAOk9TcECg1TOquAW3r-IE');
+// Real multisig, correctly compiled with the pinned func-js version — see
+// pinned-hashes.json and the commit that redeployed it after the toolchain-
+// mismatch incident. The old address (EQDjHFKV_zZ1fATzlktn1Nqq1bAvSJDns3S-
+// FKjlFtTLlEvg) is abandoned; this is the authoritative admin for all
+// fresh mainnet deployments.
+const ADMIN = Address.parse('EQAHjBAJD8C_kdO3K9Lv7vAnwJttFRS3pxxW5N3yMNY02OcO');
 
-// Router isn't deployed yet (blocked on the STON.fi pool address — see
-// docs/tokenomics.md "Still blocking"). Point at the admin multisig as a
-// placeholder so forwarded TON has somewhere safe to land; call
-// sendSetRouter once the real Router is live.
+// Router isn't deployed yet (Step 5 in the deploy sequence). Point at the
+// admin multisig as a placeholder so forwarded TON has somewhere safe to
+// land; call sendSetRouter once the real Router is live.
 const ROUTER_PLACEHOLDER = ADMIN;
 
 // price(n) = 1 TON * 1.15^n, n = current extraSlots (0-indexed), MAX_SLOTS = 100.

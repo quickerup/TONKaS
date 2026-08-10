@@ -38,7 +38,7 @@ export function buildRegistryDeployRequest(registry: SlotRegistry, fromAddress: 
     const stateInit = beginCell().store(storeStateInit(registry.init)).endCell();
 
     return {
-        validUntil: Math.floor(Date.now() / 1000) + 600,
+        validUntil: Math.floor(Date.now() / 1000) + 280,
         from: fromAddress.toRawString(),
         messages: [
             {

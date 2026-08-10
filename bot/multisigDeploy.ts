@@ -29,7 +29,7 @@ export function buildDeployRequest(multisig: Multisig, fromAddress: Address): Se
     const body = beginCell().storeUint(0, 32).storeUint(0, 64).endCell(); // op=0, queryId=0 — matches Multisig.ts's own sendDeploy
 
     return {
-        validUntil: Math.floor(Date.now() / 1000) + 600, // 10 minutes to actually tap through and approve
+        validUntil: Math.floor(Date.now() / 1000) + 280, // TON Connect / Telegram Wallet caps this at 5 minutes -- see the commit that fixed this across every request builder
         from: fromAddress.toRawString(),
         messages: [
             {

@@ -1,0 +1,24 @@
+name = "tonkas-game-bot"
+main = "src/game-bot.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# KV namespace — create with: wrangler kv namespace create DB
+# Then replace the ID below with the real one from the output.
+[[kv_namespaces]]
+binding = "DB"
+id = "b2b6142ef2a847b7a12258165711bcf1"
+
+# Secrets (set via `wrangler secret put <NAME>`):
+#   BOT_TOKEN       — Telegram bot token from @BotFather
+#   ORACLE_SEED     — 32-byte hex ed25519 seed (same as oracle worker)
+#
+# Optional env vars (can also be set as secrets or plain vars):
+#   REGISTRY_ADDRESS   — SlotRegistry mainnet address
+#   COLLECTION_ADDRESS — SkipCollection mainnet address
+#   ROUTER_ADDRESS     — Router mainnet address
+
+[vars]
+REGISTRY_ADDRESS   = "EQC6KhPaGrVtoFg_fgPQQ8VS2gmjasA-e4NnxICSCP9Tfbmx"
+COLLECTION_ADDRESS = "EQB2pjIBqzdBaQFTWS7ufvFNr_zLqp-092Ls5iWO0mWRlx_n"
+ROUTER_ADDRESS     = "EQBCm3xJR8955i2IQqvME7z_94gqAgMwBq2GA4WqmxV9GqP4"

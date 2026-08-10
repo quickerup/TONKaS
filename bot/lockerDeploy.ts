@@ -20,7 +20,7 @@ export function buildLockerDeployRequest(locker: LiquidityLocker, fromAddress: A
     const stateInit = beginCell().store(storeStateInit(locker.init)).endCell();
 
     return {
-        validUntil: Math.floor(Date.now() / 1000) + 600,
+        validUntil: Math.floor(Date.now() / 1000) + 280,
         from: fromAddress.toRawString(),
         messages: [
             {

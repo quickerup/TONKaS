@@ -3,17 +3,19 @@ import { RewardVault } from '../wrappers/RewardVault';
 import { compile, NetworkProvider } from '@ton/blueprint';
 
 // Resolved parameters — see docs/tokenomics.md "Vault".
-// PLACEHOLDER — this is STON.fi's shared router, not a real multisig. Fine for
-// testnet/dev; must be replaced before any mainnet deploy. See docs/tokenomics.md
-// "Current mainnet state" — deploying the real multisig is the designated first
-// mainnet action.
-const ADMIN = Address.parse('EQADEFMTMnC-gu5v2U0ZY8AYaGhAOk9TcECg1TOquAW3r-IE');
+// Real multisig, correctly compiled with the pinned func-js version — see
+// pinned-hashes.json and the commit that redeployed it after the toolchain-
+// mismatch incident. The old address (EQDjHFKV_zZ1fATzlktn1Nqq1bAvSJDns3S-
+// FKjlFtTLlEvg) is abandoned; this is the authoritative admin for all
+// fresh mainnet deployments.
+const ADMIN = Address.parse('EQAHjBAJD8C_kdO3K9Lv7vAnwJttFRS3pxxW5N3yMNY02OcO');
 const DECIMALS = 1000000000n; // reward jetton has 9 decimals
 
-// Oracle isn't built yet (see docs/tokenomics.md "Oracle signer key: not yet
-// built"). Deploy paused with a zero signer key so no claim can verify against
-// it, then call sendSetSignerKey once the oracle has a real keypair.
-const SIGNER_KEY_PLACEHOLDER = 0n;
+// Real oracle public key from Step 0 — see https://tonkas-oracle.duck47783.workers.dev/pubkey
+// and the commit that deployed worker/. The zero-placeholder approach used here originally
+// (before Step 0 was complete) is superseded; bot/vaultDeploy.ts has always used the real
+// key and is the actual mainnet deploy path.
+const SIGNER_KEY = BigInt('0x1ec527f9a4e266724a26d318f86804edb8451c2299627768a5aafd600aebe9e4');
 
 // The Vault's jetton wallet address is a function of the Vault's OWN address
 // (deployed after this config is fixed), so it can't be known up front —
@@ -50,7 +52,7 @@ export async function run(provider: NetworkProvider) {
         RewardVault.createFromConfig(
             {
                 admin: ADMIN,
-                signerKey: SIGNER_KEY_PLACEHOLDER,
+                signerKey: SIGNER_KEY,
                 jettonWallet: JETTON_WALLET_PLACEHOLDER,
                 claimAccountCode,
                 halvingInterval: HALVING_INTERVAL,
